@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { ArrowLeft, Save, Share2, Download } from "lucide-react";
-import { Link } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { EditorToolbar } from "../components/editor-toolbar";
 import { EditorSidebar } from "../components/editor-sidebar";
 import { SheetMusicCanvas } from "../components/sheet-music-canvas";
@@ -12,6 +12,10 @@ import { toast } from "sonner";
 type Tool = "select" | "edit" | "erase" | "pan" | "practice";
 
 export function EditorPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { musicXml, fileName } = (location.state as { musicXml: string; fileName: string }) ?? {};
+
   const [isPlaying, setIsPlaying] = useState(false);
   const [tempo, setTempo] = useState(120);
   const [isLooping, setIsLooping] = useState(false);
@@ -23,42 +27,41 @@ export function EditorPage() {
   const [loopEnd, setLoopEnd] = useState<number | null>(null);
   const [selectedNotes, setSelectedNotes] = useState<number[]>([]);
 
-  const duration = 120; // 2 minutes mock duration
+  const duration = 120;
 
-  // Show welcome message on mount
   useEffect(() => {
-    toast.success("Welcome to the Music Editor!", {
-      description: "Click on notes to select them, or press Play to start",
+    if (!musicXml) {
+      toast.error("No file loaded — please upload a sheet music image first.");
+      navigate("/upload");
+      return;
+    }
+    toast.success("Sheet music ready!", {
+      description: "Click Export to download the MusicXML file.",
       duration: 5000,
     });
   }, []);
 
-  // Playback simulation
   useEffect(() => {
     if (!isPlaying) return;
 
     const interval = setInterval(() => {
       setPlaybackPosition((prev) => {
         const next = prev + 1;
-        
-        // Handle looping
+
         if (isLooping && loopStart !== null && loopEnd !== null) {
-          if (next > (loopEnd + 1) * 4) {
-            return loopStart * 4;
-          }
+          if (next > (loopEnd + 1) * 4) return loopStart * 4;
         }
-        
-        // Reset at end
+
         if (next >= 32) {
           setIsPlaying(false);
           return 0;
         }
-        
+
         return next;
       });
 
       setCurrentTime((prev) => {
-        const next = prev + (60 / tempo);
+        const next = prev + 60 / tempo;
         if (next >= duration) {
           setIsPlaying(false);
           return 0;
@@ -70,13 +73,8 @@ export function EditorPage() {
     return () => clearInterval(interval);
   }, [isPlaying, tempo, isLooping, loopStart, loopEnd, duration]);
 
-  const handlePlayPause = () => {
-    setIsPlaying(!isPlaying);
-  };
-
-  const handleTempoChange = (value: number) => {
-    setTempo(value);
-  };
+  const handlePlayPause = () => setIsPlaying(!isPlaying);
+  const handleTempoChange = (value: number) => setTempo(value);
 
   const handleLoopToggle = () => {
     setIsLooping(!isLooping);
@@ -85,13 +83,8 @@ export function EditorPage() {
     }
   };
 
-  const handleUndo = () => {
-    toast.info("Undo");
-  };
-
-  const handleRedo = () => {
-    toast.info("Redo");
-  };
+  const handleUndo = () => toast.info("Undo");
+  const handleRedo = () => toast.info("Redo");
 
   const handleAIFix = () => {
     toast.success("AI analyzing and fixing notation...", {
@@ -106,16 +99,13 @@ export function EditorPage() {
   };
 
   const handleNoteSelect = (noteId: number) => {
-    setSelectedNotes((prev) => {
-      if (prev.includes(noteId)) {
-        return prev.filter((id) => id !== noteId);
-      }
-      return [...prev, noteId];
-    });
+    setSelectedNotes((prev) =>
+      prev.includes(noteId) ? prev.filter((id) => id !== noteId) : [...prev, noteId]
+    );
   };
 
-  const handlePropertyChange = (property: string, value: any) => {
-    if (property === 'delete') {
+  const handlePropertyChange = (property: string, _value: any) => {
+    if (property === "delete") {
       toast.success(`Deleted ${selectedNotes.length} note(s)`);
       setSelectedNotes([]);
     } else {
@@ -128,17 +118,23 @@ export function EditorPage() {
     setPlaybackPosition(Math.floor((time / duration) * 32));
   };
 
-  const handleSave = () => {
-    toast.success("Project saved successfully");
-  };
-
-  const handleShare = () => {
-    toast.success("Share link copied to clipboard");
-  };
+  const handleSave = () => toast.success("Project saved successfully");
+  const handleShare = () => toast.success("Share link copied to clipboard");
 
   const handleDownload = () => {
-    toast.success("Downloading sheet music as PDF...");
+    if (!musicXml) return;
+    const blob = new Blob([musicXml], { type: "application/xml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = (fileName ?? "score").replace(/\.[^.]+$/, "") + ".musicxml";
+    a.click();
+    URL.revokeObjectURL(url);
   };
+
+  const displayTitle = fileName
+    ? fileName.replace(/\.[^.]+$/, "")
+    : "Sheet Music";
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -153,7 +149,7 @@ export function EditorPage() {
             <span>Back</span>
           </Link>
           <div className="w-px h-6 bg-border" />
-          <h1 className="text-lg font-semibold">Moonlight Sonata - Movement 1</h1>
+          <h1 className="text-lg font-semibold">{displayTitle}</h1>
         </div>
 
         <div className="flex items-center gap-3">
@@ -196,7 +192,6 @@ export function EditorPage() {
 
       {/* Main Editor Area */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar - Tools */}
         <EditorSidebar
           activeTool={activeTool}
           onToolChange={setActiveTool}
@@ -211,7 +206,6 @@ export function EditorPage() {
           }}
         />
 
-        {/* Canvas */}
         <SheetMusicCanvas
           isPlaying={isPlaying}
           playbackPosition={playbackPosition}
@@ -222,21 +216,18 @@ export function EditorPage() {
           onNoteSelect={handleNoteSelect}
         />
 
-        {/* Right Panel - Properties */}
         <PropertiesPanel
           selectedNotes={selectedNotes}
           onPropertyChange={handlePropertyChange}
         />
       </div>
 
-      {/* Bottom Timeline */}
       <PlaybackTimeline
         currentTime={currentTime}
         duration={duration}
         onSeek={handleSeek}
       />
 
-      {/* Keyboard Shortcuts */}
       <KeyboardShortcuts />
     </div>
   );
