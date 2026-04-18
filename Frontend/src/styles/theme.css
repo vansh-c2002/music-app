@@ -14,8 +14,8 @@
   --secondary-foreground: #F5F5DC;
   --muted: #D7CCC8;
   --muted-foreground: #6D4C41;
-  --accent: #7FFFD4;
-  --accent-foreground: #3E2723;
+  --accent: #E8622A;
+  --accent-foreground: #FFFFFF;
   --destructive: #d4183d;
   --destructive-foreground: #ffffff;
   --border: rgba(62, 39, 35, 0.1);
@@ -24,7 +24,7 @@
   --switch-background: #BCAAA4;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --ring: #7FFFD4;
+  --ring: #E8622A;
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
