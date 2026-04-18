@@ -2,7 +2,7 @@
 
 > Turn a photo of any sheet music into an editable digital score—instantly.
 
-**Oh Sheet!** is a CS 343 course project by Team 4: [Vansh Chugh](https://github.com/vansh-c2002), [Khizran Fatima](https://github.com/khizran), and [Anh Phan](https://github.com/anhphan). We're building a tool that lets musicians photograph printed or handwritten sheet music and get back a clean, editable `.musicxml` file that opens directly in MuseScore.
+**Oh Sheet!** is a CS 343 course project by Team 4: [Vansh Chugh](https://github.com/vansh-c2002), [Khizran Fatima](https://github.com/kfatima317), and [Anh Phan](https://github.com/anhphan). We're building a tool that lets musicians photograph printed or handwritten sheet music and get back a clean, editable `.musicxml` file that opens directly in MuseScore.
 
 No more manual note entry. No more transcription headaches. Just snap, convert, and edit.
 
