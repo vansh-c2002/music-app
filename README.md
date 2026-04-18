@@ -70,6 +70,8 @@ npm install
 ```bash
 npm run dev
 ```
+> **Important:** The development server only runs while your terminal is open. If you close the terminal or restart your computer, just run `npm run dev` again from the `Frontend` folder to bring it back up.
+> **Note:** The OMR model backend is currently in development...
 
 5. **Open your browser and go to:**
 ```
