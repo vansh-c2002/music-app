@@ -142,7 +142,7 @@ export function LandingPage() {
             Ready to transform your sheet music?
           </h2>
           <p className="text-xl text-muted-foreground mb-8">
-            Join thousands of musicians using SheetFlow every day
+            Join thousands of musicians using Oh Sheet! every day
           </p>
           <Link 
             to="/upload"
@@ -157,7 +157,7 @@ export function LandingPage() {
       {/* Footer */}
       <footer className="border-t border-border py-12 px-6">
         <div className="max-w-6xl mx-auto text-center text-muted-foreground">
-          <p>© 2026 SheetFlow. Transform the way you interact with music.</p>
+          <p>© 2026 Oh Sheet! Transform the way you interact with music.</p>
         </div>
       </footer>
     </div>

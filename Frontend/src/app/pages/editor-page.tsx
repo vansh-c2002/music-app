@@ -1,129 +1,140 @@
-import { useState, useEffect } from "react";
-import { ArrowLeft, Save, Share2, Download } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { ArrowLeft, Download, RotateCcw, RotateCw, ChevronLeft, ChevronRight } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
-import { EditorToolbar } from "../components/editor-toolbar";
-import { EditorSidebar } from "../components/editor-sidebar";
-import { SheetMusicCanvas } from "../components/sheet-music-canvas";
-import { PlaybackTimeline } from "../components/playback-timeline";
-import { PropertiesPanel } from "../components/properties-panel";
-import { KeyboardShortcuts } from "../components/keyboard-shortcuts";
 import { toast } from "sonner";
+import { SheetMusicCanvas } from "../components/sheet-music-canvas";
+import { EditorSidebar } from "../components/editor-sidebar";
+import { PropertiesPanel } from "../components/properties-panel";
+import {
+  parseMusicXml,
+  updateNotePitch,
+  deleteNote,
+  applyDiatonicStep,
+} from "../lib/parse-musicxml";
+import type { ParsedNote } from "../lib/parse-musicxml";
 
-type Tool = "select" | "edit" | "erase" | "pan" | "practice";
+// Notes eligible for cursor steps (skip chord duplicates: same measure + beat as previous)
+function getCursorNotes(xml: string): ParsedNote[] {
+  try {
+    const { notes } = parseMusicXml(xml);
+    const result: ParsedNote[] = [];
+    for (const n of notes) {
+      const prev = result[result.length - 1];
+      if (prev && prev.measure === n.measure && prev.beat === n.beat && !prev.isRest) {
+        continue;
+      }
+      result.push(n);
+    }
+    return result;
+  } catch {
+    return [];
+  }
+}
 
 export function EditorPage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { musicXml, fileName } = (location.state as { musicXml: string; fileName: string }) ?? {};
+  const { musicXml: initialXml, fileName } =
+    (location.state as { musicXml: string; fileName: string }) ?? {};
 
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [tempo, setTempo] = useState(120);
-  const [isLooping, setIsLooping] = useState(false);
-  const [activeTool, setActiveTool] = useState<Tool>("select");
-  const [isPracticeMode, setIsPracticeMode] = useState(false);
-  const [playbackPosition, setPlaybackPosition] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [loopStart, setLoopStart] = useState<number | null>(null);
-  const [loopEnd, setLoopEnd] = useState<number | null>(null);
-  const [selectedNotes, setSelectedNotes] = useState<number[]>([]);
+  const [history, setHistory] = useState<string[]>([]);
+  const [histIdx, setHistIdx] = useState(-1);
+  const currentXml = history[histIdx] ?? "";
 
-  const duration = 120;
+  const [cursorStep, setCursorStep] = useState(0);
+
+  const cursorNotes = currentXml ? getCursorNotes(currentXml) : [];
+  const cursorNote: ParsedNote | null = cursorNotes[cursorStep] ?? null;
 
   useEffect(() => {
-    if (!musicXml) {
+    if (!initialXml) {
       toast.error("No file loaded — please upload a sheet music image first.");
       navigate("/upload");
       return;
     }
-    toast.success("Sheet music ready!", {
-      description: "Click Export to download the MusicXML file.",
-      duration: 5000,
-    });
+    setHistory([initialXml]);
+    setHistIdx(0);
   }, []);
 
+  const moveNext = useCallback(() => {
+    setCursorStep((s) => Math.min(s + 1, cursorNotes.length - 1));
+  }, [cursorNotes.length]);
+
+  const movePrev = useCallback(() => {
+    setCursorStep((s) => Math.max(s - 1, 0));
+  }, []);
+
+  // Keyboard navigation and pitch editing
   useEffect(() => {
-    if (!isPlaying) return;
+    const handler = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement).tagName === "BUTTON") return;
 
-    const interval = setInterval(() => {
-      setPlaybackPosition((prev) => {
-        const next = prev + 1;
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        moveNext();
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        movePrev();
+      } else if (e.key === "ArrowUp" && cursorNote && !cursorNote.isRest) {
+        e.preventDefault();
+        changePitch(cursorNote, 1);
+      } else if (e.key === "ArrowDown" && cursorNote && !cursorNote.isRest) {
+        e.preventDefault();
+        changePitch(cursorNote, -1);
+      } else if (e.key === "Delete" && cursorNote) {
+        e.preventDefault();
+        handleDelete(cursorNote);
+      } else if (e.key === "z" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        handleUndo();
+      } else if (e.key === "y" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [cursorNote, histIdx, history, moveNext, movePrev]);
 
-        if (isLooping && loopStart !== null && loopEnd !== null) {
-          if (next > (loopEnd + 1) * 4) return loopStart * 4;
-        }
-
-        if (next >= 32) {
-          setIsPlaying(false);
-          return 0;
-        }
-
-        return next;
-      });
-
-      setCurrentTime((prev) => {
-        const next = prev + 60 / tempo;
-        if (next >= duration) {
-          setIsPlaying(false);
-          return 0;
-        }
-        return next;
-      });
-    }, (60 / tempo) * 1000);
-
-    return () => clearInterval(interval);
-  }, [isPlaying, tempo, isLooping, loopStart, loopEnd, duration]);
-
-  const handlePlayPause = () => setIsPlaying(!isPlaying);
-  const handleTempoChange = (value: number) => setTempo(value);
-
-  const handleLoopToggle = () => {
-    setIsLooping(!isLooping);
-    if (!isLooping) {
-      toast.success("Loop mode enabled. Click and drag on measures to set loop region.");
-    }
+  const pushXml = (newXml: string) => {
+    setHistory((prev) => [...prev.slice(0, histIdx + 1), newXml]);
+    setHistIdx((i) => i + 1);
   };
 
-  const handleUndo = () => toast.info("Undo");
-  const handleRedo = () => toast.info("Redo");
-
-  const handleAIFix = () => {
-    toast.success("AI analyzing and fixing notation...", {
-      description: "Fixed 3 notation errors and improved spacing",
-    });
+  const changePitch = (note: ParsedNote, delta: number) => {
+    const { step, octave } = applyDiatonicStep(note.step, note.octave, delta);
+    pushXml(updateNotePitch(currentXml, note.measure, note.xmlIndex, step, octave, 0));
   };
 
-  const handleLoopSelect = (start: number, end: number) => {
-    setLoopStart(start);
-    setLoopEnd(end);
-    toast.success(`Loop set: Measures ${start + 1} to ${end + 1}`);
+  const handleDelete = (note: ParsedNote) => {
+    pushXml(deleteNote(currentXml, note.measure, note.xmlIndex));
   };
 
-  const handleNoteSelect = (noteId: number) => {
-    setSelectedNotes((prev) =>
-      prev.includes(noteId) ? prev.filter((id) => id !== noteId) : [...prev, noteId]
+  const handleUndo = () => {
+    if (histIdx <= 0) return;
+    setHistIdx((i) => i - 1);
+  };
+
+  const handleRedo = () => {
+    if (histIdx >= history.length - 1) return;
+    setHistIdx((i) => i + 1);
+  };
+
+  const handleNoteClick = useCallback((note: ParsedNote) => {
+    const notes = getCursorNotes(currentXml);
+    const idx = notes.findIndex(
+      (n) => n.measure === note.measure && n.xmlIndex === note.xmlIndex
     );
-  };
+    if (idx !== -1) setCursorStep(idx);
+  }, [currentXml]);
 
-  const handlePropertyChange = (property: string, _value: any) => {
-    if (property === "delete") {
-      toast.success(`Deleted ${selectedNotes.length} note(s)`);
-      setSelectedNotes([]);
-    } else {
-      toast.info(`Updated ${property} for ${selectedNotes.length} note(s)`);
-    }
-  };
-
-  const handleSeek = (time: number) => {
-    setCurrentTime(time);
-    setPlaybackPosition(Math.floor((time / duration) * 32));
-  };
-
-  const handleSave = () => toast.success("Project saved successfully");
-  const handleShare = () => toast.success("Share link copied to clipboard");
+  const handlePitchCommit = useCallback((note: ParsedNote, step: string, octave: number) => {
+    pushXml(updateNotePitch(currentXml, note.measure, note.xmlIndex, step, octave, note.alter));
+  }, [currentXml, histIdx]);
 
   const handleDownload = () => {
-    if (!musicXml) return;
-    const blob = new Blob([musicXml], { type: "application/xml" });
+    if (!currentXml) return;
+    const blob = new Blob([currentXml], { type: "application/xml" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -132,14 +143,14 @@ export function EditorPage() {
     URL.revokeObjectURL(url);
   };
 
-  const displayTitle = fileName
-    ? fileName.replace(/\.[^.]+$/, "")
-    : "Sheet Music";
+  const displayTitle = fileName ? fileName.replace(/\.[^.]+$/, "") : "Sheet Music";
+
+  if (!currentXml) return null;
 
   return (
-    <div className="h-screen flex flex-col bg-background">
-      {/* Top Navigation */}
-      <div className="bg-card border-b border-border px-6 py-3 flex items-center justify-between">
+    <div className="h-screen flex flex-col bg-background" tabIndex={-1}>
+      {/* Top nav */}
+      <div className="bg-card border-b border-border px-6 py-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-4">
           <Link
             to="/"
@@ -152,20 +163,22 @@ export function EditorPage() {
           <h1 className="text-lg font-semibold">{displayTitle}</h1>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <button
-            onClick={handleSave}
-            className="px-4 py-2 bg-muted hover:bg-muted/80 rounded-lg transition-colors flex items-center gap-2"
+            onClick={handleUndo}
+            disabled={histIdx <= 0}
+            className="p-2 rounded-lg bg-muted hover:bg-muted/80 disabled:opacity-40 transition-colors"
+            title="Undo (Ctrl+Z)"
           >
-            <Save className="w-4 h-4" />
-            <span>Save</span>
+            <RotateCcw className="w-4 h-4" />
           </button>
           <button
-            onClick={handleShare}
-            className="px-4 py-2 bg-muted hover:bg-muted/80 rounded-lg transition-colors flex items-center gap-2"
+            onClick={handleRedo}
+            disabled={histIdx >= history.length - 1}
+            className="p-2 rounded-lg bg-muted hover:bg-muted/80 disabled:opacity-40 transition-colors"
+            title="Redo (Ctrl+Y)"
           >
-            <Share2 className="w-4 h-4" />
-            <span>Share</span>
+            <RotateCw className="w-4 h-4" />
           </button>
           <button
             onClick={handleDownload}
@@ -177,58 +190,63 @@ export function EditorPage() {
         </div>
       </div>
 
-      {/* Toolbar */}
-      <EditorToolbar
-        isPlaying={isPlaying}
-        onPlayPause={handlePlayPause}
-        tempo={tempo}
-        onTempoChange={handleTempoChange}
-        isLooping={isLooping}
-        onLoopToggle={handleLoopToggle}
-        onUndo={handleUndo}
-        onRedo={handleRedo}
-        onAIFix={handleAIFix}
-      />
+      {/* Navigation bar */}
+      <div className="bg-card border-b border-border px-4 py-2 flex items-center gap-3 shrink-0">
+        <button
+          onClick={movePrev}
+          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-muted hover:bg-muted/80 text-sm transition-colors"
+          title="Previous note (← arrow key)"
+        >
+          <ChevronLeft className="w-4 h-4" />
+          Prev
+        </button>
+        <button
+          onClick={moveNext}
+          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-muted hover:bg-muted/80 text-sm transition-colors"
+          title="Next note (→ arrow key)"
+        >
+          Next
+          <ChevronRight className="w-4 h-4" />
+        </button>
 
-      {/* Main Editor Area */}
+        {cursorNote && (
+          <span className="text-sm text-muted-foreground ml-2">
+            {cursorNote.isRest ? "Rest" : `${cursorNote.step}${cursorNote.alter === 1 ? "#" : cursorNote.alter === -1 ? "b" : ""}${cursorNote.octave}`}
+            {" · "}M{cursorNote.measure + 1}
+          </span>
+        )}
+
+        <div className="ml-auto text-xs text-muted-foreground">
+          Click to select · ← → navigate · ↑ ↓ change pitch · drag to repitch · Del to delete
+        </div>
+      </div>
+
+      {/* Main area */}
       <div className="flex-1 flex overflow-hidden">
         <EditorSidebar
-          activeTool={activeTool}
-          onToolChange={setActiveTool}
-          isPracticeMode={isPracticeMode}
-          onPracticeModeToggle={() => {
-            setIsPracticeMode(!isPracticeMode);
-            if (!isPracticeMode) {
-              toast.success("Practice mode enabled", {
-                description: "Notes will be highlighted as you play them",
-              });
-            }
-          }}
+          activeTool="select"
+          onToolChange={() => {}}
         />
 
         <SheetMusicCanvas
-          isPlaying={isPlaying}
-          playbackPosition={playbackPosition}
-          loopStart={loopStart}
-          loopEnd={loopEnd}
-          onLoopSelect={handleLoopSelect}
-          selectedNotes={selectedNotes}
-          onNoteSelect={handleNoteSelect}
+          musicXml={currentXml}
+          selectedNote={cursorNote}
+          onNoteClick={handleNoteClick}
+          onPitchCommit={handlePitchCommit}
         />
 
         <PropertiesPanel
-          selectedNotes={selectedNotes}
-          onPropertyChange={handlePropertyChange}
+          note={cursorNote}
+          onPitchStep={(note, newStep, newOctave) =>
+            pushXml(updateNotePitch(currentXml, note.measure, note.xmlIndex, newStep, newOctave, 0))
+          }
+          onAlterChange={(note, alter) =>
+            pushXml(updateNotePitch(currentXml, note.measure, note.xmlIndex, note.step, note.octave, alter))
+          }
+          onDurationChange={() => toast.info("Duration editing coming soon")}
+          onDelete={handleDelete}
         />
       </div>
-
-      <PlaybackTimeline
-        currentTime={currentTime}
-        duration={duration}
-        onSeek={handleSeek}
-      />
-
-      <KeyboardShortcuts />
     </div>
   );
 }

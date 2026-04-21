@@ -9,7 +9,7 @@ export function Navbar() {
       <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
           <Music2 className="w-8 h-8 text-primary" />
-          <span className="text-xl font-semibold text-primary">SheetFlow</span>
+          <span className="text-xl font-semibold text-primary">Oh Sheet!</span>
         </Link>
         
         <div className="flex items-center gap-8">
