@@ -8,24 +8,15 @@ import { PropertiesPanel } from "../components/properties-panel";
 import {
   parseMusicXml,
   updateNotePitch,
+  updateNoteDuration,
   deleteNote,
   applyDiatonicStep,
 } from "../lib/parse-musicxml";
 import type { ParsedNote } from "../lib/parse-musicxml";
 
-// Notes eligible for cursor steps (skip chord duplicates: same measure + beat as previous)
 function getCursorNotes(xml: string): ParsedNote[] {
   try {
-    const { notes } = parseMusicXml(xml);
-    const result: ParsedNote[] = [];
-    for (const n of notes) {
-      const prev = result[result.length - 1];
-      if (prev && prev.measure === n.measure && prev.beat === n.beat && !prev.isRest) {
-        continue;
-      }
-      result.push(n);
-    }
-    return result;
+    return parseMusicXml(xml).notes;
   } catch {
     return [];
   }
@@ -42,9 +33,20 @@ export function EditorPage() {
   const currentXml = history[histIdx] ?? "";
 
   const [cursorStep, setCursorStep] = useState(0);
+  // Indices into cursorNotes that are shift-selected in addition to cursorStep
+  const [extraSelected, setExtraSelected] = useState<number[]>([]);
 
   const cursorNotes = currentXml ? getCursorNotes(currentXml) : [];
   const cursorNote: ParsedNote | null = cursorNotes[cursorStep] ?? null;
+
+  // All selected notes to pass to canvas (non-rest only, since canvas can't hit rests)
+  const selectedNotes: ParsedNote[] = (() => {
+    const indices = new Set([cursorStep, ...extraSelected]);
+    return Array.from(indices)
+      .filter((i) => i >= 0 && i < cursorNotes.length)
+      .map((i) => cursorNotes[i])
+      .filter((n) => !n.isRest);
+  })();
 
   useEffect(() => {
     if (!initialXml) {
@@ -58,13 +60,14 @@ export function EditorPage() {
 
   const moveNext = useCallback(() => {
     setCursorStep((s) => Math.min(s + 1, cursorNotes.length - 1));
+    setExtraSelected([]);
   }, [cursorNotes.length]);
 
   const movePrev = useCallback(() => {
     setCursorStep((s) => Math.max(s - 1, 0));
+    setExtraSelected([]);
   }, []);
 
-  // Keyboard navigation and pitch editing
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).tagName === "BUTTON") return;
@@ -75,12 +78,23 @@ export function EditorPage() {
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
         movePrev();
-      } else if (e.key === "ArrowUp" && cursorNote && !cursorNote.isRest) {
-        e.preventDefault();
-        changePitch(cursorNote, 1);
-      } else if (e.key === "ArrowDown" && cursorNote && !cursorNote.isRest) {
-        e.preventDefault();
-        changePitch(cursorNote, -1);
+      } else if (e.key === "ArrowUp") {
+        // Move all selected non-rest notes up
+        const targets = [cursorStep, ...extraSelected]
+          .map((i) => cursorNotes[i])
+          .filter((n): n is ParsedNote => !!n && !n.isRest);
+        if (targets.length > 0) {
+          e.preventDefault();
+          changePitchMulti(targets, 1);
+        }
+      } else if (e.key === "ArrowDown") {
+        const targets = [cursorStep, ...extraSelected]
+          .map((i) => cursorNotes[i])
+          .filter((n): n is ParsedNote => !!n && !n.isRest);
+        if (targets.length > 0) {
+          e.preventDefault();
+          changePitchMulti(targets, -1);
+        }
       } else if (e.key === "Delete" && cursorNote) {
         e.preventDefault();
         handleDelete(cursorNote);
@@ -94,16 +108,20 @@ export function EditorPage() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [cursorNote, histIdx, history, moveNext, movePrev]);
+  }, [cursorNote, cursorStep, extraSelected, cursorNotes, histIdx, history, moveNext, movePrev]);
 
   const pushXml = (newXml: string) => {
     setHistory((prev) => [...prev.slice(0, histIdx + 1), newXml]);
     setHistIdx((i) => i + 1);
   };
 
-  const changePitch = (note: ParsedNote, delta: number) => {
-    const { step, octave } = applyDiatonicStep(note.step, note.octave, delta);
-    pushXml(updateNotePitch(currentXml, note.measure, note.xmlIndex, step, octave, 0));
+  const changePitchMulti = (notes: ParsedNote[], delta: number) => {
+    let xml = currentXml;
+    for (const note of notes) {
+      const { step, octave } = applyDiatonicStep(note.step, note.octave, delta);
+      xml = updateNotePitch(xml, note.measure, note.xmlIndex, step, octave, note.alter);
+    }
+    pushXml(xml);
   };
 
   const handleDelete = (note: ParsedNote) => {
@@ -120,13 +138,30 @@ export function EditorPage() {
     setHistIdx((i) => i + 1);
   };
 
-  const handleNoteClick = useCallback((note: ParsedNote) => {
+  const handleNoteClick = useCallback((note: ParsedNote, shiftHeld: boolean) => {
     const notes = getCursorNotes(currentXml);
-    const idx = notes.findIndex(
+    let idx = notes.findIndex(
       (n) => n.measure === note.measure && n.xmlIndex === note.xmlIndex
     );
-    if (idx !== -1) setCursorStep(idx);
-  }, [currentXml]);
+    // If it's a chord secondary (not in cursorNotes), fall back to the chord primary
+    if (idx === -1) {
+      // chord secondary: fall back to matching by staffId + beat
+      idx = notes.findIndex(
+        (n) => n.measure === note.measure && n.beat === note.beat && n.staffId === note.staffId
+      );
+    }
+    if (idx === -1) return;
+
+    if (shiftHeld) {
+      if (idx === cursorStep) return;
+      setExtraSelected((prev) =>
+        prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
+      );
+    } else {
+      setCursorStep(idx);
+      setExtraSelected([]);
+    }
+  }, [currentXml, cursorStep]);
 
   const handlePitchCommit = useCallback((note: ParsedNote, step: string, octave: number) => {
     pushXml(updateNotePitch(currentXml, note.measure, note.xmlIndex, step, octave, note.alter));
@@ -146,6 +181,8 @@ export function EditorPage() {
   const displayTitle = fileName ? fileName.replace(/\.[^.]+$/, "") : "Sheet Music";
 
   if (!currentXml) return null;
+
+  const multiSelected = extraSelected.length > 0;
 
   return (
     <div className="h-screen flex flex-col bg-background" tabIndex={-1}>
@@ -211,26 +248,28 @@ export function EditorPage() {
 
         {cursorNote && (
           <span className="text-sm text-muted-foreground ml-2">
-            {cursorNote.isRest ? "Rest" : `${cursorNote.step}${cursorNote.alter === 1 ? "#" : cursorNote.alter === -1 ? "b" : ""}${cursorNote.octave}`}
+            {cursorNote.isRest
+              ? "Rest"
+              : `${cursorNote.step}${cursorNote.alter === 1 ? "#" : cursorNote.alter === -1 ? "b" : ""}${cursorNote.octave}`}
             {" · "}M{cursorNote.measure + 1}
+            {multiSelected && (
+              <span className="ml-2 text-accent">+{extraSelected.length} selected</span>
+            )}
           </span>
         )}
 
         <div className="ml-auto text-xs text-muted-foreground">
-          Click to select · ← → navigate · ↑ ↓ change pitch · drag to repitch · Del to delete
+          Click · Shift+click to multi-select · ← → navigate · ↑ ↓ change pitch · drag to repitch · Del to delete
         </div>
       </div>
 
       {/* Main area */}
       <div className="flex-1 flex overflow-hidden">
-        <EditorSidebar
-          activeTool="select"
-          onToolChange={() => {}}
-        />
+        <EditorSidebar activeTool="select" onToolChange={() => {}} />
 
         <SheetMusicCanvas
           musicXml={currentXml}
-          selectedNote={cursorNote}
+          selectedNotes={selectedNotes}
           onNoteClick={handleNoteClick}
           onPitchCommit={handlePitchCommit}
         />
@@ -243,7 +282,9 @@ export function EditorPage() {
           onAlterChange={(note, alter) =>
             pushXml(updateNotePitch(currentXml, note.measure, note.xmlIndex, note.step, note.octave, alter))
           }
-          onDurationChange={() => toast.info("Duration editing coming soon")}
+          onDurationChange={(note, type) =>
+            pushXml(updateNoteDuration(currentXml, note.measure, note.xmlIndex, type))
+          }
           onDelete={handleDelete}
         />
       </div>

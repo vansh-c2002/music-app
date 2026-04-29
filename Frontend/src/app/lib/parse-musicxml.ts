@@ -1,7 +1,10 @@
 export interface ParsedNote {
   id: number;          // global sequential ID
   xmlIndex: number;    // index within the <note> elements of its measure (for XML mutation)
-  measure: number;     // 0-based measure index
+  measure: number;      // 0-based global measure index (across all parts, used for XML mutation)
+  localMeasure: number; // 0-based index within its own <part> (matches OSMD's MeasureList index)
+  partIndex: number;    // which <part> this note belongs to
+  staffId: number;      // unique 0-based staff index derived from (partIndex, <staff> number)
   beat: number;        // 0-based beat within measure
   step: string;        // C D E F G A B  (or "R" for rest)
   octave: number;
@@ -61,38 +64,63 @@ export function parseMusicXml(xml: string): ParsedScore {
 
   const notes: ParsedNote[] = [];
   let noteId = 0;
-  const measures = doc.getElementsByTagName("measure");
+  const parts = doc.getElementsByTagName("part");
+  // Use parts if present, otherwise fall back to flat measure list
+  const partEls = parts.length > 0 ? Array.from(parts) : [doc.documentElement];
+  let globalMeasureOffset = 0;
 
-  for (let m = 0; m < measures.length; m++) {
-    const measure = measures[m];
-    const noteEls = measure.getElementsByTagName("note");
-    let beat = 0;
+  for (let p = 0; p < partEls.length; p++) {
+    const partMeasures = partEls[p].getElementsByTagName("measure");
 
-    for (let n = 0; n < noteEls.length; n++) {
-      const noteEl = noteEls[n];
-      const isRest = noteEl.getElementsByTagName("rest").length > 0;
-      const isChord = noteEl.getElementsByTagName("chord").length > 0;
+    for (let m = 0; m < partMeasures.length; m++) {
+      const measure = partMeasures[m];
+      const noteEls = measure.getElementsByTagName("note");
+      let beat = 0;
 
-      const pitchEl = noteEl.getElementsByTagName("pitch")[0];
-      const step = pitchEl?.getElementsByTagName("step")[0]?.textContent?.trim() ?? "C";
-      const octave = parseInt(pitchEl?.getElementsByTagName("octave")[0]?.textContent ?? "4", 10);
-      const alter = parseFloat(pitchEl?.getElementsByTagName("alter")[0]?.textContent ?? "0");
-      const type = noteEl.getElementsByTagName("type")[0]?.textContent?.trim() ?? "quarter";
+      for (let n = 0; n < noteEls.length; n++) {
+        const noteEl = noteEls[n];
+        const isRest = noteEl.getElementsByTagName("rest").length > 0;
+        const isChord = noteEl.getElementsByTagName("chord").length > 0;
 
-      if (!isChord) beat++;
+        const pitchEl = noteEl.getElementsByTagName("pitch")[0];
+        const step = pitchEl?.getElementsByTagName("step")[0]?.textContent?.trim() ?? "C";
+        const octave = parseInt(pitchEl?.getElementsByTagName("octave")[0]?.textContent ?? "4", 10);
+        const alter = parseFloat(pitchEl?.getElementsByTagName("alter")[0]?.textContent ?? "0");
+        const type = noteEl.getElementsByTagName("type")[0]?.textContent?.trim() ?? "quarter";
 
-      notes.push({
-        id: noteId++,
-        xmlIndex: n,
-        measure: m,
-        beat: beat - 1,
-        step: isRest ? "R" : step,
-        octave: isRest ? 4 : octave,
-        alter: isRest ? 0 : alter,
-        type,
-        isRest,
-      });
+        if (!isChord) beat++;
+        const staffNum = parseInt(noteEl.getElementsByTagName("staff")[0]?.textContent ?? "1", 10);
+
+        notes.push({
+          id: noteId++,
+          xmlIndex: n,
+          measure: globalMeasureOffset + m,
+          localMeasure: m,
+          partIndex: p,
+          staffId: 0, // filled in below
+          beat: beat - 1,
+          step: isRest ? "R" : step,
+          octave: isRest ? 4 : octave,
+          alter: isRest ? 0 : alter,
+          type,
+          isRest,
+          _staffNum: staffNum, // temp field
+        } as any);
+      }
     }
+
+    globalMeasureOffset += partMeasures.length;
+  }
+
+  // Assign staffId: unique sequential index per (partIndex, staffNum) pair,
+  // in the order first encountered — which is top-staff-first in standard MusicXML.
+  const staffKeys = new Map<string, number>();
+  for (const n of notes) {
+    const raw = (n as any)._staffNum as number;
+    const key = `${n.partIndex}_${raw}`;
+    if (!staffKeys.has(key)) staffKeys.set(key, staffKeys.size);
+    n.staffId = staffKeys.get(key)!;
+    delete (n as any)._staffNum;
   }
 
   return { info, notes };
@@ -191,6 +219,45 @@ export function deleteNote(xml: string, measureIdx: number, xmlNoteIdx: number):
   }
 
   measure.replaceChild(rest, noteEl);
+  return serializeXml(doc);
+}
+
+// Quarter = 1× divisions; whole = 4×; half = 2×; eighth = 0.5×; etc.
+const TYPE_MULTIPLIER: Record<string, number> = {
+  whole: 4, half: 2, quarter: 1, eighth: 0.5, sixteenth: 0.25, "32nd": 0.125,
+};
+
+export function updateNoteDuration(
+  xml: string,
+  measureIdx: number,
+  xmlNoteIdx: number,
+  newType: string
+): string {
+  const multiplier = TYPE_MULTIPLIER[newType];
+  if (multiplier === undefined) return xml;
+
+  const doc = parseXml(xml);
+  const measures = doc.getElementsByTagName("measure");
+
+  // Find the nearest <divisions> value at or before this measure
+  let divisions = 1;
+  for (let i = measureIdx; i >= 0; i--) {
+    const divEl = measures[i]?.getElementsByTagName("divisions")[0];
+    if (divEl) { divisions = parseInt(divEl.textContent ?? "1", 10); break; }
+  }
+
+  const measure = measures[measureIdx];
+  if (!measure) return xml;
+
+  const noteEl = measure.getElementsByTagName("note")[xmlNoteIdx];
+  if (!noteEl) return xml;
+
+  const typeEl = noteEl.getElementsByTagName("type")[0];
+  if (typeEl) typeEl.textContent = newType;
+
+  const durationEl = noteEl.getElementsByTagName("duration")[0];
+  if (durationEl) durationEl.textContent = String(Math.round(divisions * multiplier));
+
   return serializeXml(doc);
 }
 

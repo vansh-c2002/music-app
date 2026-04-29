@@ -1,15 +1,38 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Upload, FileMusic, AlertCircle } from "lucide-react";
 import { useNavigate } from "react-router";
 import { Navbar } from "../components/navbar";
 import { motion } from "motion/react";
+
+const AD_DURATION = 30;
 
 export function UploadPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState("");
+  const [showAd, setShowAd] = useState(false);
+  const [adCountdown, setAdCountdown] = useState(AD_DURATION);
+  const pendingFile = useRef<File | null>(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!showAd) return;
+    setAdCountdown(AD_DURATION);
+    const interval = setInterval(() => {
+      if (!document.hasFocus() || document.hidden) return;
+      setAdCountdown((n) => {
+        if (n <= 1) {
+          clearInterval(interval);
+          setShowAd(false);
+          if (pendingFile.current) runUpload(pendingFile.current);
+          return 0;
+        }
+        return n - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [showAd]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -36,10 +59,15 @@ export function UploadPage() {
     }
   };
 
-  const handleFileUpload = async (file: File) => {
+  const handleFileUpload = (file: File) => {
     setFileName(file.name);
-    setProcessing(true);
     setError(null);
+    pendingFile.current = file;
+    setShowAd(true);
+  };
+
+  const runUpload = async (file: File) => {
+    setProcessing(true);
 
     const formData = new FormData();
     formData.append("file", file);
@@ -69,7 +97,9 @@ export function UploadPage() {
   const handleReset = () => {
     setError(null);
     setProcessing(false);
+    setShowAd(false);
     setFileName("");
+    pendingFile.current = null;
   };
 
   return (
@@ -107,7 +137,29 @@ export function UploadPage() {
                 }
               `}
             >
-              {error ? (
+              {showAd ? (
+                <div className="text-center">
+                  <div className="w-24 h-24 bg-muted rounded-full flex items-center justify-center mx-auto mb-6 relative">
+                    <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 96 96">
+                      <circle cx="48" cy="48" r="44" fill="none" stroke="currentColor" strokeWidth="4" className="text-border" />
+                      <motion.circle
+                        cx="48" cy="48" r="44"
+                        fill="none" stroke="currentColor" strokeWidth="4"
+                        strokeDasharray={2 * Math.PI * 44}
+                        strokeDashoffset={2 * Math.PI * 44 * (adCountdown / AD_DURATION)}
+                        className="text-accent"
+                        style={{ transition: "stroke-dashoffset 1s linear" }}
+                      />
+                    </svg>
+                    <span className="text-2xl font-bold text-primary">{adCountdown}</span>
+                  </div>
+                  <h2 className="text-2xl font-semibold text-primary mb-2">A word from our sponsors</h2>
+                  <p className="text-muted-foreground mb-6 text-sm">Your upload starts in {adCountdown} second{adCountdown !== 1 ? "s" : ""}</p>
+                  <div className="w-full max-w-md mx-auto h-32 bg-muted border border-border rounded-xl flex items-center justify-center">
+                    <span className="text-muted-foreground text-sm tracking-widest uppercase">[ Ad Placeholder ]</span>
+                  </div>
+                </div>
+              ) : error ? (
                 <div className="text-center">
                   <div className="w-24 h-24 bg-destructive/10 rounded-full flex items-center justify-center mx-auto mb-6">
                     <AlertCircle className="w-12 h-12 text-destructive" />
