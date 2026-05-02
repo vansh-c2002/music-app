@@ -126,3 +126,14 @@ modal deploy modal_app.py
 | Vansh Chugh | ML / OMR model + backend |
 | Khizran Fatima | Frontend & UI/UX |
 | Anh Phan | Backend & integration |
+
+---
+
+## TODOs
+
+### Khizran
+- [ ] **Auth + user accounts** — login/signup with stored history of converted files per user
+- [ ] **Multi-page support** — handle multi-page scores (upload multiple images, stitch results into one `.musicxml`)
+
+### Vansh
+- [ ] **Handwritten score support** — integrate a handwritten OMR model as an alternative backend; use an agent to classify whether the uploaded piece is classical or jazz and route to the appropriate model accordingly
