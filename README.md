@@ -136,8 +136,8 @@ modal deploy main.py
 | Name | Role |
 |------|------|
 | Vansh Chugh | ML / OMR model + backend |
-| Khizran Fatima | Frontend & UI/UX |
-| Anh Phan | Research + integration |
+| Khizran Fatima | Frontend & UI/UX + backend |
+| Anh Phan | Research + integration + backend |
 
 ---
 
