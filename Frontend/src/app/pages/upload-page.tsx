@@ -59,9 +59,23 @@ export function UploadPage() {
     }
   };
 
-  const handleFileUpload = (file: File) => {
-    setFileName(file.name);
+  const ACCEPTED_TYPES = ["image/png", "image/jpeg", "application/pdf"];
+const MAX_SIZE_MB = 10;
+
+const handleFileUpload = (file: File) => {
     setError(null);
+
+    if (!ACCEPTED_TYPES.includes(file.type)) {
+      setError("Please upload a PNG, JPG, or PDF file.");
+      return;
+    }
+
+    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+      setError("File is too large. Maximum size is 10MB.");
+      return;
+    }
+
+    setFileName(file.name);
     pendingFile.current = file;
     setShowAd(true);
   };
@@ -115,7 +129,7 @@ export function UploadPage() {
           >
             <h1 className="text-5xl font-bold text-primary mb-4">Upload Your Sheet Music</h1>
             <p className="text-xl text-muted-foreground">
-              Support for PNG and JPG files
+              Support for PNG, JPG, and PDF files
             </p>
           </motion.div>
 
@@ -209,7 +223,7 @@ export function UploadPage() {
                   <label className="inline-block">
                     <input
                       type="file"
-                      accept=".png,.jpg,.jpeg"
+                      accept=".png,.jpg,.jpeg,.pdf"
                       onChange={handleFileSelect}
                       className="hidden"
                     />
@@ -220,7 +234,7 @@ export function UploadPage() {
                   </label>
 
                   <p className="text-sm text-muted-foreground mt-8">
-                    Supported formats: PNG, JPG (Max 10MB)
+                    Supported formats: PNG, JPG, PDF (Max 10MB)
                   </p>
                 </div>
               )}
