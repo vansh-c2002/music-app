@@ -2,10 +2,10 @@ import modal
 import subprocess
 import tempfile
 from pathlib import Path
-
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+from pdf2image import convert_from_bytes
 
 app = modal.App("ohsheet-omr")
 
@@ -21,8 +21,9 @@ image = (
         "libsm6",
         "libxrender1",
         "libxext6",
+        "poppler-utils",
     )
-    .pip_install("fastapi", "python-multipart", "poetry")
+    .pip_install("fastapi", "python-multipart", "poetry", "pdf2image")
     .run_commands(
         "git clone https://github.com/liebharc/homr /homr",
         "cd /homr && poetry config virtualenvs.create false"
@@ -46,9 +47,15 @@ async def transcribe(file: UploadFile = File(...)):
     contents = await file.read()
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        suffix = Path(file.filename or "upload.png").suffix or ".png"
-        image_path = Path(tmpdir) / f"input{suffix}"
-        image_path.write_bytes(contents)
+        # if PDF, convert first page to PNG before passing to HOMR
+        if file.content_type == "application/pdf":
+            images = convert_from_bytes(contents, dpi=300, first_page=1, last_page=1)
+            image_path = Path(tmpdir) / "input.png"
+            images[0].save(str(image_path), "PNG")
+        else:
+            suffix = Path(file.filename or "upload.png").suffix or ".png"
+            image_path = Path(tmpdir) / f"input{suffix}"
+            image_path.write_bytes(contents)
 
         result = subprocess.run(
             ["homr", str(image_path)],
@@ -56,20 +63,17 @@ async def transcribe(file: UploadFile = File(...)):
             capture_output=True,
             text=True,
         )
-
         if result.returncode != 0:
             raise HTTPException(
                 status_code=500,
                 detail=f"homr failed: {result.stderr}",
             )
-
         xml_files = list(Path(tmpdir).glob("*.musicxml"))
         if not xml_files:
             raise HTTPException(
                 status_code=500,
                 detail="homr produced no output file",
             )
-
         xml_content = xml_files[0].read_text(encoding="utf-8")
 
     return Response(
