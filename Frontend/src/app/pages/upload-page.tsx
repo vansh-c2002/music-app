@@ -13,7 +13,7 @@ export function UploadPage() {
   const [fileName, setFileName] = useState("");
   const [showAd, setShowAd] = useState(false);
   const [adCountdown, setAdCountdown] = useState(AD_DURATION);
-  const pendingFile = useRef<File | null>(null);
+  const pendingFile = useRef<File[]>([]);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -25,7 +25,7 @@ export function UploadPage() {
         if (n <= 1) {
           clearInterval(interval);
           setShowAd(false);
-          if (pendingFile.current) runUpload(pendingFile.current);
+          if (pendingFile.current.length > 0) runUpload(pendingFile.current);
           return 0;
         }
         return n - 1;
@@ -48,49 +48,52 @@ export function UploadPage() {
     setIsDragging(false);
     const files = e.dataTransfer.files;
     if (files.length > 0) {
-      handleFileUpload(files[0]);
+      handleFilesUpload(Array.from(files));
     }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      handleFileUpload(files[0]);
+      handleFilesUpload(Array.from(files));
     }
   };
 
-  const ACCEPTED_TYPES = ["image/png", "image/jpeg", "application/pdf"];
+const ACCEPTED_TYPES = ["image/png", "image/jpeg", "application/pdf"];
 const MAX_SIZE_MB = 10;
 
-const handleFileUpload = (file: File) => {
+const handleFilesUpload = (files: File[]) => {
     setError(null);
 
-    if (!ACCEPTED_TYPES.includes(file.type)) {
-      setError("Please upload a PNG, JPG, or PDF file.");
+    const invalid = files.find(f => !ACCEPTED_TYPES.includes(f.type));
+    if (invalid) {
+      setError(`"${invalid.name}" is not a supported format. Use PNG, JPG, or PDF.`);
       return;
     }
 
-    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
-      setError("File is too large. Maximum size is 10MB.");
+    const tooBig = files.find(f => f.size > MAX_SIZE_MB * 1024 * 1024);
+    if (tooBig) {
+      setError(`"${tooBig.name}" exceeds the 10MB limit.`);
       return;
     }
 
-    setFileName(file.name);
-    pendingFile.current = file;
+    const names = files.map(f => f.name).join(", ");
+    setFileName(names);
+    pendingFile.current = files;
     setShowAd(true);
   };
 
-  const runUpload = async (file: File) => {
+  const runUpload = async (files: File[]) => {
     setProcessing(true);
 
     const formData = new FormData();
-    formData.append("file", file);
+    files.forEach(f => formData.append("files", f));
 
     try {
       const apiUrl = import.meta.env.VITE_API_URL;
       if (!apiUrl) throw new Error("API URL not configured");
 
-      const response = await fetch(`${apiUrl}/transcribe`, {
+      const response = await fetch(`${apiUrl}/transcribe-multi`, {
         method: "POST",
         body: formData,
       });
@@ -101,7 +104,7 @@ const handleFileUpload = (file: File) => {
       }
 
       const musicXml = await response.text();
-      navigate("/editor", { state: { musicXml, fileName: file.name } });
+      navigate("/editor", { state: { musicXml, fileName: files[0].name } });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setProcessing(false);
@@ -113,7 +116,7 @@ const handleFileUpload = (file: File) => {
     setProcessing(false);
     setShowAd(false);
     setFileName("");
-    pendingFile.current = null;
+    pendingFile.current = [];
   };
 
   return (
@@ -226,6 +229,7 @@ const handleFileUpload = (file: File) => {
                       accept=".png,.jpg,.jpeg,.pdf"
                       onChange={handleFileSelect}
                       className="hidden"
+                      multiple
                     />
                     <span className="px-8 py-4 bg-accent text-accent-foreground rounded-lg cursor-pointer hover:opacity-90 transition-all inline-flex items-center gap-2">
                       <FileMusic className="w-5 h-5" />
@@ -234,7 +238,7 @@ const handleFileUpload = (file: File) => {
                   </label>
 
                   <p className="text-sm text-muted-foreground mt-8">
-                    Supported formats: PNG, JPG, PDF (Max 10MB)
+                    Supported formats: PNG, JPG, PDF · Multiple files supported · Max 10MB each
                   </p>
                 </div>
               )}
