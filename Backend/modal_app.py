@@ -82,6 +82,56 @@ async def transcribe(file: UploadFile = File(...)):
         headers={"Content-Disposition": "attachment; filename=score.musicxml"},
     )
 
+@web_app.post("/transcribe-multi")
+async def transcribe_multi(files: list[UploadFile] = File(...)):
+    import io
+    all_images: list[bytes] = []
+
+    for file in files:
+        contents = await file.read()
+
+        if file.content_type == "application/pdf":
+            pages = convert_from_bytes(contents, dpi=300)
+            for page in pages:
+                buf = io.BytesIO()
+                page.save(buf, format="PNG")
+                all_images.append(buf.getvalue())
+        else:
+            all_images.append(contents)
+
+    all_xml: list[str] = []
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for i, image_bytes in enumerate(all_images):
+            image_path = Path(tmpdir) / f"input_{i}.png"
+            image_path.write_bytes(image_bytes)
+
+            result = subprocess.run(
+                ["homr", str(image_path)],
+                cwd=tmpdir,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"homr failed on page {i+1}: {result.stderr}",
+                )
+
+            xml_files = list(Path(tmpdir).glob(f"input_{i}*.musicxml"))
+            if not xml_files:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"homr produced no output for page {i+1}",
+                )
+            all_xml.append(xml_files[0].read_text(encoding="utf-8"))
+
+    return Response(
+        content=all_xml[0],
+        media_type="text/xml",
+        headers={"Content-Disposition": "attachment; filename=score.musicxml"},
+    )
+
 
 @app.function(gpu="T4", image=image, timeout=600)
 @modal.asgi_app()
