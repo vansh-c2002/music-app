@@ -1,28 +1,41 @@
 # Oh Sheet!
-> Turn a photo of any sheet music into an editable digital score—instantly.
+> Turn a photo of any sheet music into an editable digital score — instantly.
 
-**Oh Sheet!** is a CS 343 course project by [Vansh Chugh](https://github.com/vansh-c2002), [Khizran Fatima](https://github.com/kfatima317), and [Anh Phan](https://github.com/salad905). Upload a photo of printed sheet music and get back a clean, editable `.musicxml` file that opens directly in MuseScore.
+**Oh Sheet!** is a CS 343 course project by [Vansh Chugh](https://github.com/vansh-c2002), [Khizran Fatima](https://github.com/kfatima317), and [Anh Phan](https://github.com/salad905).
+
+Upload a photo or scan of printed sheet music — as a PNG, JPG, or multi-page PDF — and get back a clean, editable `.musicxml` file that opens directly in MuseScore.
 
 ---
 
 ## How It Works
+Upload PNG, JPG, or PDF (single or multiple files)
+↓
+Files validated + ad countdown on free tier
+↓
+Modal GPU endpoint runs HOMR (OMR model) on each page
+↓
+MusicXML returned (~3–5 min per page)
+↓
+View result in editor → export .musicxml → open in MuseScore
 
-```
-Upload PNG/JPG of sheet music
-        ↓
-Modal GPU endpoint runs homr (OMR model)
-        ↓
-MusicXML file returned (~3–5 min)
-        ↓
-Export button downloads the .musicxml file → open in MuseScore
-```
+---
+
+## Features
+
+- Upload PNG, JPG, or PDF files
+- Multi-file upload — select multiple images at once
+- Multi-page PDF support — every page is processed automatically
+- In-browser sheet music editor with note properties panel
+- One-click export to `.musicxml` or `.mxl` for MuseScore
+- Low-confidence notes flagged for user review
+- Ad-supported free tier (30-second countdown before processing)
+- Live at [music-app-924.pages.dev](https://music-app-924.pages.dev)
 
 ---
 
 ## Running Locally
 
 ### Prerequisites
-
 - [Node.js](https://nodejs.org/) v18+
 - [pnpm](https://pnpm.io/) — install with `brew install pnpm` (Mac) or `npm install -g pnpm`
 - The `VITE_API_URL` environment variable (ask Vansh for the Modal endpoint URL)
@@ -31,7 +44,7 @@ Export button downloads the .musicxml file → open in MuseScore
 
 ```bash
 git clone https://github.com/vansh-c2002/music-app.git
-cd music-app/Frontend
+cd music-app/frontend
 
 # Copy the env template and fill in the API URL
 cp .env.example .env
@@ -47,8 +60,8 @@ pnpm dev
 | Route | Description |
 |-------|-------------|
 | `/` | Landing page |
-| `/upload` | Upload a PNG/JPG of sheet music |
-| `/editor` | View result and export `.musicxml` |
+| `/upload` | Upload sheet music files |
+| `/editor` | View converted score and export `.musicxml` |
 
 ---
 
@@ -57,65 +70,64 @@ pnpm dev
 | Layer | Technology |
 |-------|------------|
 | Frontend | React 18 + Vite + Tailwind CSS v4 + shadcn/ui |
-| Backend | Python + FastAPI + [homr](https://github.com/liebharc/homr) OMR model |
-| GPU Hosting | [Modal](https://modal.com) (free tier, T4 GPU) |
+| Animations | Motion (Framer Motion) |
+| Backend | Python + FastAPI + [HOMR](https://github.com/liebharc/homr) OMR model |
+| PDF conversion | pdf2image + poppler |
+| GPU Hosting | [Modal](https://modal.com) (T4 GPU, pay-per-invocation) |
 | Frontend Hosting | Cloudflare Pages |
 
 ---
 
 ## Project Structure
-
-```
 music-app/
-├── Backend/
-│   ├── modal_app.py        # Modal GPU endpoint (homr inference)
-│   └── requirements.txt    # Just: modal, fastapi
-├── Frontend/
+├── backend/
+│   └── main.py             # Modal GPU endpoint — HOMR inference + PDF handling
+├── frontend/
 │   ├── src/
-│   │   ├── app/
-│   │   │   ├── pages/      # LandingPage, UploadPage, EditorPage
-│   │   │   ├── components/ # Editor UI, shadcn/ui primitives
-│   │   │   ├── routes.tsx
-│   │   │   └── App.tsx
-│   │   └── styles/         # Tailwind + theme CSS (beige/brown + aquamarine)
-│   ├── .env.example        # Copy to .env and fill in VITE_API_URL
-│   ├── public/_redirects   # Cloudflare Pages SPA routing
+│   │   ├── pages/          # LandingPage, UploadPage, EditorPage
+│   │   ├── components/     # Navbar, editor UI, shadcn/ui primitives
+│   │   ├── routes.tsx
+│   │   └── App.tsx
+│   ├── .env.example        # Copy to .env and set VITE_API_URL
+│   ├── public/_redirects   # Cloudflare Pages SPA routing fix
 │   └── package.json
 └── README.md
-```
 
 ---
 
 ## Backend Deployment (Vansh only)
 
-The Modal backend is deployed once and shared. To redeploy after changes:
+The Modal backend is deployed once and shared across the team. To redeploy after changes:
 
 ```bash
-# Create and activate the backend venv (one-time)
-python3 -m venv /path/to/venvs/ohsheet-backend
-source /path/to/venvs/ohsheet-backend/bin/activate
-pip install modal fastapi
-
-# Authenticate with Modal (one-time)
+# One-time: install modal and authenticate
+pip install modal
 modal setup
 
 # Deploy
-cd Backend
-modal deploy modal_app.py
+cd backend
+modal deploy main.py
 # → prints the endpoint URL to put in VITE_API_URL
 ```
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/transcribe` | POST | Single image (PNG/JPG) → MusicXML |
+| `/transcribe-multi` | POST | Multiple files or PDF → MusicXML (first page returned) |
 
 ---
 
 ## Frontend Deployment (Cloudflare Pages)
 
-1. cloudflare.com → Workers & Pages → Create → Pages → Connect to Git
+1. [cloudflare.com](https://cloudflare.com) → Workers & Pages → Create → Pages → Connect to Git
 2. Build settings:
-   - **Root directory**: `Frontend`
+   - **Root directory**: `frontend`
    - **Build command**: `pnpm install && pnpm build`
    - **Output directory**: `dist`
 3. Add environment variable: `VITE_API_URL` = Modal endpoint URL
-4. Deploy — get a `*.pages.dev` URL
+4. Deploy — live at `*.pages.dev`
 
 ---
 
@@ -125,15 +137,14 @@ modal deploy modal_app.py
 |------|------|
 | Vansh Chugh | ML / OMR model + backend |
 | Khizran Fatima | Frontend & UI/UX |
-| Anh Phan | Backend & integration |
+| Anh Phan | Research + integration |
 
 ---
 
-## TODOs
+## Roadmap
 
-### Khizran
-- [ ] **Auth + user accounts** — login/signup with stored history of converted files per user
-- [ ] **Multi-page support** — handle multi-page scores (upload multiple images, stitch results into one `.musicxml`)
-
-### Vansh
-- [ ] **Handwritten score support** — integrate a handwritten OMR model as an alternative backend; use an agent to classify whether the uploaded piece is classical or jazz and route to the appropriate model accordingly
+- [ ] CoT post-hoc correction — pipe HOMR output through an LLM to flag music theory violations before showing the result
+- [ ] Multi-page editor — stitch multiple pages of MusicXML into a single scrollable score
+- [ ] Handwritten score support — integrate the ISMIR 2025 jazz lead sheet model for handwritten input
+- [ ] Auth + user accounts — login/signup with history of converted files per user
+- [ ] Export button prominence — make export more visible in the editor (user feedback)
