@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { Upload, FileMusic, AlertCircle } from "lucide-react";
+import { Upload, FileMusic, AlertCircle, LogIn } from "lucide-react";
 import { useNavigate } from "react-router";
 import { Navbar } from "../components/navbar";
 import { motion } from "motion/react";
+import { useAuth } from "../lib/auth-context";
 
 const AD_DURATION = 30;
 
@@ -15,6 +16,7 @@ export function UploadPage() {
   const [adCountdown, setAdCountdown] = useState(AD_DURATION);
   const pendingFile = useRef<File[]>([]);
   const navigate = useNavigate();
+  const { currentUser, signInWithGoogle } = useAuth();
 
   useEffect(() => {
     if (!showAd) return;
@@ -85,6 +87,10 @@ const handleFilesUpload = (files: File[]) => {
   };
 
   const runUpload = async (files: File[]) => {
+    if (!currentUser) {
+      setError("Please sign in to transcribe sheet music.");
+      return;
+    }
     setProcessing(true);
 
     const formData = new FormData();
@@ -94,8 +100,11 @@ const handleFilesUpload = (files: File[]) => {
       const apiUrl = import.meta.env.VITE_API_URL;
       if (!apiUrl) throw new Error("API URL not configured");
 
+      const idToken = await currentUser.getIdToken();
+
       const response = await fetch(`${apiUrl}/transcribe-multi`, {
         method: "POST",
+        headers: { Authorization: `Bearer ${idToken}` },
         body: formData,
       });
 
@@ -182,14 +191,26 @@ const handleFilesUpload = (files: File[]) => {
                   <div className="w-24 h-24 bg-destructive/10 rounded-full flex items-center justify-center mx-auto mb-6">
                     <AlertCircle className="w-12 h-12 text-destructive" />
                   </div>
-                  <h2 className="text-2xl font-semibold text-primary mb-3">Processing Failed</h2>
+                  <h2 className="text-2xl font-semibold text-primary mb-3">
+                    {error.includes("sign in") ? "Sign In Required" : "Processing Failed"}
+                  </h2>
                   <p className="text-muted-foreground mb-6 max-w-md mx-auto text-sm">{error}</p>
-                  <button
-                    onClick={handleReset}
-                    className="px-8 py-4 bg-accent text-accent-foreground rounded-lg hover:opacity-90 transition-all"
-                  >
-                    Try Again
-                  </button>
+                  {error.includes("sign in") ? (
+                    <button
+                      onClick={async () => { handleReset(); await signInWithGoogle(); }}
+                      className="px-8 py-4 bg-accent text-accent-foreground rounded-lg hover:opacity-90 transition-all inline-flex items-center gap-2"
+                    >
+                      <LogIn className="w-5 h-5" />
+                      Sign In with Google
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleReset}
+                      className="px-8 py-4 bg-accent text-accent-foreground rounded-lg hover:opacity-90 transition-all"
+                    >
+                      Try Again
+                    </button>
+                  )}
                 </div>
               ) : processing ? (
                 <div className="text-center">

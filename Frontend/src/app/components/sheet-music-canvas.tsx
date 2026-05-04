@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
 import { parseMusicXml, applyDiatonicStep } from "../lib/parse-musicxml";
 import type { ParsedNote } from "../lib/parse-musicxml";
@@ -20,6 +20,10 @@ interface DragState {
   lineSpacingPx: number;
 }
 
+export interface SheetMusicCanvasHandle {
+  getOsmdDiv: () => HTMLDivElement | null;
+}
+
 interface Props {
   musicXml: string;
   selectedNotes: ParsedNote[];
@@ -34,7 +38,9 @@ function measureLineSpacing(container: HTMLElement): number {
     const y1 = parseFloat(line.getAttribute("y1") ?? "0");
     const y2 = parseFloat(line.getAttribute("y2") ?? "0");
     if (Math.abs(y1 - y2) < 1) {
-      ys.push(line.getBoundingClientRect().top - containerTop);
+      const r = line.getBoundingClientRect();
+      if (r.width < 30) continue; // skip ledger lines (short horizontal lines)
+      ys.push(r.top - containerTop);
     }
   }
   ys.sort((a, b) => a - b);
@@ -56,7 +62,9 @@ function staffBoundaryYs(container: HTMLElement, lineSpacingPx: number): number[
   for (const line of container.querySelectorAll<SVGLineElement>("line")) {
     if (Math.abs(parseFloat(line.getAttribute("y1") ?? "0") -
                  parseFloat(line.getAttribute("y2") ?? "0")) < 1) {
-      ys.push(line.getBoundingClientRect().top - top);
+      const r = line.getBoundingClientRect();
+      if (r.width < 30) continue; // skip ledger lines
+      ys.push(r.top - top);
     }
   }
   ys.sort((a, b) => a - b);
@@ -110,7 +118,11 @@ function buildHitsFromOsmd(
 
               const vfn = gn.vfnote?.[0] ?? gn.vfNote?.[0];
               const groupEl: Element | null =
-                vfn?.attrs?.el ?? vfn?.getSVGElement?.() ?? null;
+                vfn?.attrs?.el ??
+                vfn?.getSVGElement?.() ??
+                vfn?.elem ??
+                (vfn?.note_heads?.[0]?.attrs?.el) ??
+                null;
               if (!groupEl) continue;
 
               const nhEl = groupEl.querySelector(".vf-notehead") ?? groupEl;
@@ -161,7 +173,9 @@ function buildHits(container: HTMLElement, parsedNotes: ParsedNote[]): NoteHit[]
     arr.slice().sort((a, b) => {
       const ra = Math.floor((a.cy - containerRect.top) / rowHeight);
       const rb = Math.floor((b.cy - containerRect.top) / rowHeight);
-      return ra !== rb ? ra - rb : a.cx - b.cx;
+      if (ra !== rb) return ra - rb;
+      if (Math.abs(a.cx - b.cx) > 2) return a.cx - b.cx;
+      return a.cy - b.cy; // same column (chord): top note first
     });
 
   if (numStaves === 1) {
@@ -246,11 +260,18 @@ function colorNote(noteheadEl: Element, color: string | null) {
   if (flagEl) colorFill(flagEl, color);
 }
 
-export function SheetMusicCanvas({ musicXml, selectedNotes, onNoteClick, onPitchCommit }: Props) {
+export const SheetMusicCanvas = forwardRef<SheetMusicCanvasHandle, Props>(function SheetMusicCanvas(
+  { musicXml, selectedNotes, onNoteClick, onPitchCommit }: Props,
+  ref
+) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const osmdDivRef = useRef<HTMLDivElement>(null);
   const osmdRef = useRef<OpenSheetMusicDisplay | null>(null);
   const renderedXmlRef = useRef("");
+
+  useImperativeHandle(ref, () => ({
+    getOsmdDiv: () => osmdDivRef.current,
+  }));
   const [noteHits, setNoteHits] = useState<NoteHit[]>([]);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [containerH, setContainerH] = useState(0);
@@ -388,13 +409,13 @@ export function SheetMusicCanvas({ musicXml, selectedNotes, onNoteClick, onPitch
                 : hit.y;
 
               return (
-                <g key={i}>
+                <g key={i} style={{ pointerEvents: "all" }}>
                   {/* Clickable hit area */}
                   <ellipse
                     cx={hit.x}
                     cy={hit.y}
-                    rx={r + 5}
-                    ry={(r + 5) * 0.75}
+                    rx={r + 8}
+                    ry={r + 6}
                     fill="rgba(0,0,0,0)"
                     style={{
                       pointerEvents: "all",
@@ -439,4 +460,4 @@ export function SheetMusicCanvas({ musicXml, selectedNotes, onNoteClick, onPitch
       </div>
     </div>
   );
-}
+});

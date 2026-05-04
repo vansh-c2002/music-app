@@ -1,15 +1,24 @@
 import modal
 import subprocess
 import tempfile
+import os
+import json
 from pathlib import Path
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 app = modal.App("ohsheet-omr")
 
 try:
     from pdf2image import convert_from_bytes
+except ImportError:
+    pass
+
+try:
+    import firebase_admin
+    from firebase_admin import credentials as fb_credentials, auth as fb_auth
 except ImportError:
     pass
 
@@ -27,7 +36,7 @@ image = (
         "libxext6",
         "poppler-utils",
     )
-    .pip_install("fastapi", "python-multipart", "poetry", "pdf2image")
+    .pip_install("fastapi", "python-multipart", "poetry", "pdf2image", "firebase-admin")
     .run_commands(
         "git clone https://github.com/liebharc/homr /homr",
         "cd /homr && poetry config virtualenvs.create false"
@@ -43,11 +52,38 @@ web_app.add_middleware(
     allow_origins=["*"],
     allow_methods=["POST", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
+
+_bearer_scheme = HTTPBearer()
+_firebase_app = None
+
+
+def _get_firebase_app():
+    global _firebase_app
+    if _firebase_app is not None:
+        return _firebase_app
+    sa_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "")
+    if not sa_json:
+        raise RuntimeError("FIREBASE_SERVICE_ACCOUNT_JSON secret not set")
+    cred = fb_credentials.Certificate(json.loads(sa_json))
+    _firebase_app = firebase_admin.initialize_app(cred)
+    return _firebase_app
+
+
+async def verify_token(
+    creds: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
+) -> str:
+    try:
+        fa = _get_firebase_app()
+        decoded = fb_auth.verify_id_token(creds.credentials, app=fa)
+        return decoded["uid"]
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail=f"Unauthorized: {exc}")
 
 
 @web_app.post("/transcribe")
-async def transcribe(file: UploadFile = File(...)):
+async def transcribe(file: UploadFile = File(...), uid: str = Depends(verify_token)):
     contents = await file.read()
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -87,7 +123,7 @@ async def transcribe(file: UploadFile = File(...)):
     )
 
 @web_app.post("/transcribe-multi")
-async def transcribe_multi(files: list[UploadFile] = File(...)):
+async def transcribe_multi(files: list[UploadFile] = File(...), uid: str = Depends(verify_token)):
     import io
     all_images: list[bytes] = []
 
@@ -137,7 +173,12 @@ async def transcribe_multi(files: list[UploadFile] = File(...)):
     )
 
 
-@app.function(gpu="T4", image=image, timeout=600)
+@app.function(
+    gpu="T4",
+    image=image,
+    timeout=600,
+    secrets=[modal.Secret.from_name("firebase-service-account")],
+)
 @modal.asgi_app()
 def fastapi_app():
     return web_app
