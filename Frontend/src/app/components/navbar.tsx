@@ -68,6 +68,7 @@ export function Navbar() {
                       src={currentUser.photoURL}
                       alt={currentUser.displayName ?? "User"}
                       className="w-8 h-8 rounded-full border border-border"
+                      referrerPolicy="no-referrer"
                     />
                   ) : (
                     <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center text-accent-foreground text-sm font-semibold">
