@@ -5,9 +5,13 @@ from pathlib import Path
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
-from pdf2image import convert_from_bytes
 
 app = modal.App("ohsheet-omr")
+
+try:
+    from pdf2image import convert_from_bytes
+except ImportError:
+    pass
 
 image = (
     modal.Image.from_registry(

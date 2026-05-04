@@ -80,7 +80,8 @@ const handleFilesUpload = (files: File[]) => {
     const names = files.map(f => f.name).join(", ");
     setFileName(names);
     pendingFile.current = files;
-    setShowAd(true);
+    // setShowAd(true); // re-enable to restore ad countdown
+    runUpload(files);
   };
 
   const runUpload = async (files: File[]) => {
