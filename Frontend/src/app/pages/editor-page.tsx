@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
-import { ArrowLeft, Download, RotateCcw, RotateCw, ChevronLeft, ChevronRight } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { ArrowLeft, Download, RotateCcw, RotateCw, ChevronLeft, ChevronRight, BookmarkPlus, Loader2 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { SheetMusicCanvas } from "../components/sheet-music-canvas";
+import type { SheetMusicCanvasHandle } from "../components/sheet-music-canvas";
 import { EditorSidebar } from "../components/editor-sidebar";
 import { PropertiesPanel } from "../components/properties-panel";
 import {
@@ -14,7 +15,14 @@ import {
   transposeScore,
   keyLabel,
 } from "../lib/parse-musicxml";
+<<<<<<< HEAD
 import type { ParsedNote, ScoreInfo } from "../lib/parse-musicxml";
+=======
+import type { ParsedNote } from "../lib/parse-musicxml";
+import { useAuth } from "../lib/auth-context";
+import { generateThumbnail } from "../lib/generate-thumbnail";
+import { saveScore } from "../lib/save-score";
+>>>>>>> fccd95c1d2dce5620f270190468754f2e9ece271
 
 function parseScore(xml: string): { notes: ParsedNote[]; info: ScoreInfo | null } {
   try {
@@ -30,6 +38,10 @@ export function EditorPage() {
   const navigate = useNavigate();
   const { musicXml: initialXml, fileName } =
     (location.state as { musicXml: string; fileName: string }) ?? {};
+  const { currentUser } = useAuth();
+  const canvasRef = useRef<SheetMusicCanvasHandle>(null);
+  const [saving, setSaving] = useState(false);
+  const [savedId, setSavedId] = useState<string | null>(null);
 
   const [history, setHistory] = useState<string[]>([]);
   const [histIdx, setHistIdx] = useState(-1);
@@ -170,8 +182,27 @@ export function EditorPage() {
     pushXml(updateNotePitch(currentXml, note.measure, note.xmlIndex, step, octave, note.alter));
   }, [currentXml, histIdx]);
 
+<<<<<<< HEAD
   const handleTranspose = (semitones: number) => {
     pushXml(transposeScore(currentXml, semitones));
+=======
+  const handleSaveToLibrary = async () => {
+    if (!currentUser) {
+      toast.error("Sign in to save to your library");
+      return;
+    }
+    setSaving(true);
+    try {
+      const thumbnailDataUrl = await generateThumbnail(canvasRef.current?.getOsmdDiv() ?? null);
+      const id = await saveScore(currentUser.uid, currentXml, fileName ?? "score.musicxml", thumbnailDataUrl);
+      setSavedId(id);
+      toast.success("Saved to library!");
+    } catch {
+      toast.error("Failed to save to library");
+    } finally {
+      setSaving(false);
+    }
+>>>>>>> fccd95c1d2dce5620f270190468754f2e9ece271
   };
 
   const handleDownload = () => {
@@ -224,6 +255,21 @@ export function EditorPage() {
           >
             <RotateCw className="w-4 h-4" />
           </button>
+          {currentUser && (
+            <button
+              onClick={handleSaveToLibrary}
+              disabled={saving || !!savedId}
+              className="px-4 py-2 bg-muted hover:bg-muted/80 disabled:opacity-60 rounded-lg transition-colors flex items-center gap-2"
+              title={savedId ? "Already saved" : "Save to Library"}
+            >
+              {saving ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <BookmarkPlus className="w-4 h-4" />
+              )}
+              <span>{savedId ? "Saved" : "Save"}</span>
+            </button>
+          )}
           <button
             onClick={handleDownload}
             className="px-4 py-2 bg-accent text-accent-foreground hover:opacity-90 rounded-lg transition-opacity flex items-center gap-2"
@@ -302,6 +348,7 @@ export function EditorPage() {
         <EditorSidebar activeTool="select" onToolChange={() => {}} />
 
         <SheetMusicCanvas
+          ref={canvasRef}
           musicXml={currentXml}
           selectedNotes={selectedNotes}
           onNoteClick={handleNoteClick}

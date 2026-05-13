@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { Upload, FileMusic, AlertCircle } from "lucide-react";
+import { Upload, FileMusic, AlertCircle, LogIn } from "lucide-react";
 import { useNavigate } from "react-router";
 import { Navbar } from "../components/navbar";
 import { motion } from "motion/react";
+import { useAuth } from "../lib/auth-context";
 
 const AD_DURATION = 30;
 
@@ -13,8 +14,9 @@ export function UploadPage() {
   const [fileName, setFileName] = useState("");
   const [showAd, setShowAd] = useState(false);
   const [adCountdown, setAdCountdown] = useState(AD_DURATION);
-  const pendingFile = useRef<File | null>(null);
+  const pendingFile = useRef<File[]>([]);
   const navigate = useNavigate();
+  const { currentUser, signInWithGoogle } = useAuth();
 
   useEffect(() => {
     if (!showAd) return;
@@ -25,7 +27,7 @@ export function UploadPage() {
         if (n <= 1) {
           clearInterval(interval);
           setShowAd(false);
-          if (pendingFile.current) runUpload(pendingFile.current);
+          if (pendingFile.current.length > 0) runUpload(pendingFile.current);
           return 0;
         }
         return n - 1;
@@ -48,36 +50,61 @@ export function UploadPage() {
     setIsDragging(false);
     const files = e.dataTransfer.files;
     if (files.length > 0) {
-      handleFileUpload(files[0]);
+      handleFilesUpload(Array.from(files));
     }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      handleFileUpload(files[0]);
+      handleFilesUpload(Array.from(files));
     }
   };
 
-  const handleFileUpload = (file: File) => {
-    setFileName(file.name);
+const ACCEPTED_TYPES = ["image/png", "image/jpeg", "application/pdf"];
+const MAX_SIZE_MB = 10;
+
+const handleFilesUpload = (files: File[]) => {
     setError(null);
-    pendingFile.current = file;
-    setShowAd(true);
+
+    const invalid = files.find(f => !ACCEPTED_TYPES.includes(f.type));
+    if (invalid) {
+      setError(`"${invalid.name}" is not a supported format. Use PNG, JPG, or PDF.`);
+      return;
+    }
+
+    const tooBig = files.find(f => f.size > MAX_SIZE_MB * 1024 * 1024);
+    if (tooBig) {
+      setError(`"${tooBig.name}" exceeds the 10MB limit.`);
+      return;
+    }
+
+    const names = files.map(f => f.name).join(", ");
+    setFileName(names);
+    pendingFile.current = files;
+    // setShowAd(true); // re-enable to restore ad countdown
+    runUpload(files);
   };
 
-  const runUpload = async (file: File) => {
+  const runUpload = async (files: File[]) => {
+    if (!currentUser) {
+      setError("Please sign in to transcribe sheet music.");
+      return;
+    }
     setProcessing(true);
 
     const formData = new FormData();
-    formData.append("file", file);
+    files.forEach(f => formData.append("files", f));
 
     try {
       const apiUrl = import.meta.env.VITE_API_URL;
       if (!apiUrl) throw new Error("API URL not configured");
 
-      const response = await fetch(`${apiUrl}/transcribe`, {
+      const idToken = await currentUser.getIdToken();
+
+      const response = await fetch(`${apiUrl}/transcribe-multi`, {
         method: "POST",
+        headers: { Authorization: `Bearer ${idToken}` },
         body: formData,
       });
 
@@ -87,7 +114,7 @@ export function UploadPage() {
       }
 
       const musicXml = await response.text();
-      navigate("/editor", { state: { musicXml, fileName: file.name } });
+      navigate("/editor", { state: { musicXml, fileName: files[0].name } });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setProcessing(false);
@@ -99,7 +126,7 @@ export function UploadPage() {
     setProcessing(false);
     setShowAd(false);
     setFileName("");
-    pendingFile.current = null;
+    pendingFile.current = [];
   };
 
   return (
@@ -115,7 +142,7 @@ export function UploadPage() {
           >
             <h1 className="text-5xl font-bold text-primary mb-4">Upload Your Sheet Music</h1>
             <p className="text-xl text-muted-foreground">
-              Support for PNG and JPG files
+              Support for PNG, JPG, and PDF files
             </p>
           </motion.div>
 
@@ -164,14 +191,26 @@ export function UploadPage() {
                   <div className="w-24 h-24 bg-destructive/10 rounded-full flex items-center justify-center mx-auto mb-6">
                     <AlertCircle className="w-12 h-12 text-destructive" />
                   </div>
-                  <h2 className="text-2xl font-semibold text-primary mb-3">Processing Failed</h2>
+                  <h2 className="text-2xl font-semibold text-primary mb-3">
+                    {error.includes("sign in") ? "Sign In Required" : "Processing Failed"}
+                  </h2>
                   <p className="text-muted-foreground mb-6 max-w-md mx-auto text-sm">{error}</p>
-                  <button
-                    onClick={handleReset}
-                    className="px-8 py-4 bg-accent text-accent-foreground rounded-lg hover:opacity-90 transition-all"
-                  >
-                    Try Again
-                  </button>
+                  {error.includes("sign in") ? (
+                    <button
+                      onClick={async () => { handleReset(); await signInWithGoogle(); }}
+                      className="px-8 py-4 bg-accent text-accent-foreground rounded-lg hover:opacity-90 transition-all inline-flex items-center gap-2"
+                    >
+                      <LogIn className="w-5 h-5" />
+                      Sign In with Google
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleReset}
+                      className="px-8 py-4 bg-accent text-accent-foreground rounded-lg hover:opacity-90 transition-all"
+                    >
+                      Try Again
+                    </button>
+                  )}
                 </div>
               ) : processing ? (
                 <div className="text-center">
@@ -209,9 +248,10 @@ export function UploadPage() {
                   <label className="inline-block">
                     <input
                       type="file"
-                      accept=".png,.jpg,.jpeg"
+                      accept=".png,.jpg,.jpeg,.pdf"
                       onChange={handleFileSelect}
                       className="hidden"
+                      multiple
                     />
                     <span className="px-8 py-4 bg-accent text-accent-foreground rounded-lg cursor-pointer hover:opacity-90 transition-all inline-flex items-center gap-2">
                       <FileMusic className="w-5 h-5" />
@@ -220,7 +260,7 @@ export function UploadPage() {
                   </label>
 
                   <p className="text-sm text-muted-foreground mt-8">
-                    Supported formats: PNG, JPG (Max 10MB)
+                    Supported formats: PNG, JPG, PDF · Multiple files supported · Max 10MB each
                   </p>
                 </div>
               )}
