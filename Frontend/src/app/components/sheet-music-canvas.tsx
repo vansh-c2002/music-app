@@ -105,16 +105,21 @@ function buildHitsFromOsmd(
         for (const se of gMeasure.staffEntries) {
           for (const ve of se.graphicalVoiceEntries ?? []) {
             for (const gn of ve.notes ?? []) {
-              const note = candidates[idx++];
-              if (!note) continue;
-
               const vfn = gn.vfnote?.[0] ?? gn.vfNote?.[0];
               const groupEl: Element | null =
                 vfn?.attrs?.el ?? vfn?.getSVGElement?.() ?? null;
+              // No VexFlow element = OSMD phantom note with no XML counterpart; skip
+              // without consuming a candidate slot so subsequent notes stay aligned.
               if (!groupEl) continue;
 
               const nhEl = groupEl.querySelector(".vf-notehead") ?? groupEl;
               const r = nhEl.getBoundingClientRect();
+
+              const note = candidates[idx++];
+              if (!note) continue;
+
+              // Zero-bounds = invisible note (e.g. second half of a tie); idx
+              // is still advanced above to stay in sync with our parsed list.
               if (r.width === 0 && r.height === 0) continue;
 
               hits.push({

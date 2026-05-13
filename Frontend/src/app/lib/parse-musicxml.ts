@@ -29,6 +29,24 @@ export interface ParsedScore {
 
 const DIATONIC = ["C", "D", "E", "F", "G", "A", "B"];
 
+const NOTE_SEMITONES: Record<string, number> = {
+  C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11,
+};
+
+// Chromatic spelling tables indexed by semitone mod 12
+const SHARP_SPELLING = [
+  { step: "C", alter: 0 }, { step: "C", alter: 1 }, { step: "D", alter: 0 },
+  { step: "D", alter: 1 }, { step: "E", alter: 0 }, { step: "F", alter: 0 },
+  { step: "F", alter: 1 }, { step: "G", alter: 0 }, { step: "G", alter: 1 },
+  { step: "A", alter: 0 }, { step: "A", alter: 1 }, { step: "B", alter: 0 },
+];
+const FLAT_SPELLING = [
+  { step: "C", alter: 0  }, { step: "D", alter: -1 }, { step: "D", alter: 0 },
+  { step: "E", alter: -1 }, { step: "E", alter: 0  }, { step: "F", alter: 0 },
+  { step: "G", alter: -1 }, { step: "G", alter: 0  }, { step: "A", alter: -1 },
+  { step: "A", alter: 0  }, { step: "B", alter: -1 }, { step: "B", alter: 0 },
+];
+
 function getText(parent: Element | Document, tag: string): string {
   return parent.getElementsByTagName(tag)[0]?.textContent?.trim() ?? "";
 }
@@ -273,4 +291,71 @@ export function applyDiatonicStep(
   while (newIdx < 0) { newIdx += 7; newOctave--; }
   while (newIdx >= 7) { newIdx -= 7; newOctave++; }
   return { step: DIATONIC[newIdx], octave: newOctave };
+}
+
+// Transpose every pitched note in the score by `semitones` (negative = down).
+// Key signature is transposed via circle-of-fifths arithmetic.
+// Enharmonic spelling follows the new key: flat keys → flats, sharp keys → sharps.
+export function transposeScore(xml: string, semitones: number): string {
+  if (semitones === 0) return xml;
+  const doc = parseXml(xml);
+
+  // Determine the new key's fifths value so we can choose spelling.
+  const firstFifthsEl = doc.getElementsByTagName("key")[0]
+    ?.getElementsByTagName("fifths")[0];
+  const currentFifths = parseInt(firstFifthsEl?.textContent ?? "0", 10);
+  // Circle-of-fifths: pc = (7 * fifths) mod 12; fifths = (7 * pc) mod 12
+  const currentPc = ((7 * currentFifths) % 12 + 12) % 12;
+  const newPc = ((currentPc + semitones) % 12 + 12) % 12;
+  const rawFifths = (7 * newPc) % 12;
+  const newKeyFifths = rawFifths > 6 ? rawFifths - 12 : rawFifths;
+  const table = newKeyFifths < 0 ? FLAT_SPELLING : SHARP_SPELLING;
+
+  // Transpose all pitched notes
+  for (const noteEl of Array.from(doc.getElementsByTagName("note"))) {
+    const pitchEl = noteEl.getElementsByTagName("pitch")[0];
+    if (!pitchEl) continue; // rest — no pitch element
+
+    const stepEl   = pitchEl.getElementsByTagName("step")[0];
+    const octaveEl = pitchEl.getElementsByTagName("octave")[0];
+    const alterEl  = pitchEl.getElementsByTagName("alter")[0];
+    if (!stepEl || !octaveEl) continue;
+
+    const step   = stepEl.textContent!.trim();
+    const octave = parseInt(octaveEl.textContent!, 10);
+    const alter  = parseFloat(alterEl?.textContent ?? "0");
+
+    const absSemi = octave * 12 + (NOTE_SEMITONES[step] ?? 0) + alter + semitones;
+    const newOctave = Math.floor(absSemi / 12);
+    const semMod = ((absSemi % 12) + 12) % 12;
+    const { step: ns, alter: na } = table[semMod];
+
+    stepEl.textContent   = ns;
+    octaveEl.textContent = String(newOctave);
+
+    if (na !== 0) {
+      if (alterEl) {
+        alterEl.textContent = String(na);
+      } else {
+        const el = doc.createElement("alter");
+        el.textContent = String(na);
+        pitchEl.insertBefore(el, octaveEl);
+      }
+    } else if (alterEl) {
+      pitchEl.removeChild(alterEl);
+    }
+  }
+
+  // Transpose every key signature element
+  for (const keyEl of Array.from(doc.getElementsByTagName("key"))) {
+    const fifthsEl = keyEl.getElementsByTagName("fifths")[0];
+    if (!fifthsEl) continue;
+    const kFifths = parseInt(fifthsEl.textContent ?? "0", 10);
+    const kPc = ((7 * kFifths) % 12 + 12) % 12;
+    const kNewPc = ((kPc + semitones) % 12 + 12) % 12;
+    const kRaw = (7 * kNewPc) % 12;
+    fifthsEl.textContent = String(kRaw > 6 ? kRaw - 12 : kRaw);
+  }
+
+  return serializeXml(doc);
 }

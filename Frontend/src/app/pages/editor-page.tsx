@@ -11,14 +11,17 @@ import {
   updateNoteDuration,
   deleteNote,
   applyDiatonicStep,
+  transposeScore,
+  keyLabel,
 } from "../lib/parse-musicxml";
-import type { ParsedNote } from "../lib/parse-musicxml";
+import type { ParsedNote, ScoreInfo } from "../lib/parse-musicxml";
 
-function getCursorNotes(xml: string): ParsedNote[] {
+function parseScore(xml: string): { notes: ParsedNote[]; info: ScoreInfo | null } {
   try {
-    return parseMusicXml(xml).notes;
+    const { notes, info } = parseMusicXml(xml);
+    return { notes, info };
   } catch {
-    return [];
+    return { notes: [], info: null };
   }
 }
 
@@ -36,7 +39,7 @@ export function EditorPage() {
   // Indices into cursorNotes that are shift-selected in addition to cursorStep
   const [extraSelected, setExtraSelected] = useState<number[]>([]);
 
-  const cursorNotes = currentXml ? getCursorNotes(currentXml) : [];
+  const { notes: cursorNotes, info: scoreInfo } = currentXml ? parseScore(currentXml) : { notes: [], info: null };
   const cursorNote: ParsedNote | null = cursorNotes[cursorStep] ?? null;
 
   // All selected notes to pass to canvas (non-rest only, since canvas can't hit rests)
@@ -139,7 +142,7 @@ export function EditorPage() {
   };
 
   const handleNoteClick = useCallback((note: ParsedNote, shiftHeld: boolean) => {
-    const notes = getCursorNotes(currentXml);
+    const { notes } = parseScore(currentXml);
     let idx = notes.findIndex(
       (n) => n.measure === note.measure && n.xmlIndex === note.xmlIndex
     );
@@ -166,6 +169,10 @@ export function EditorPage() {
   const handlePitchCommit = useCallback((note: ParsedNote, step: string, octave: number) => {
     pushXml(updateNotePitch(currentXml, note.measure, note.xmlIndex, step, octave, note.alter));
   }, [currentXml, histIdx]);
+
+  const handleTranspose = (semitones: number) => {
+    pushXml(transposeScore(currentXml, semitones));
+  };
 
   const handleDownload = () => {
     if (!currentXml) return;
@@ -258,8 +265,35 @@ export function EditorPage() {
           </span>
         )}
 
-        <div className="ml-auto text-xs text-muted-foreground">
-          Click · Shift+click to multi-select · ← → navigate · ↑ ↓ change pitch · drag to repitch · Del to delete
+        <div className="ml-auto flex items-center gap-3">
+          {scoreInfo && (
+            <span className="text-xs text-muted-foreground">
+              Key: <span className="font-medium text-foreground">{keyLabel(scoreInfo)}</span>
+            </span>
+          )}
+          <div className="flex items-center gap-1" title="Transpose whole piece">
+            <span className="text-xs text-muted-foreground mr-1">Transpose:</span>
+            <button
+              onClick={() => handleTranspose(-12)}
+              className="px-2 py-1 rounded bg-muted hover:bg-muted/70 text-xs transition-colors"
+              title="Down one octave"
+            >↓8va</button>
+            <button
+              onClick={() => handleTranspose(-1)}
+              className="px-2 py-1 rounded bg-muted hover:bg-muted/70 text-xs transition-colors"
+              title="Down one semitone"
+            >−½</button>
+            <button
+              onClick={() => handleTranspose(1)}
+              className="px-2 py-1 rounded bg-muted hover:bg-muted/70 text-xs transition-colors"
+              title="Up one semitone"
+            >+½</button>
+            <button
+              onClick={() => handleTranspose(12)}
+              className="px-2 py-1 rounded bg-muted hover:bg-muted/70 text-xs transition-colors"
+              title="Up one octave"
+            >↑8va</button>
+          </div>
         </div>
       </div>
 
