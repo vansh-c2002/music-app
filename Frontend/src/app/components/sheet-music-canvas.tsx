@@ -115,17 +115,13 @@ function buildHitsFromOsmd(
             for (const gn of ve.notes ?? []) {
               const vfn = gn.vfnote?.[0] ?? gn.vfNote?.[0];
               const groupEl: Element | null =
-<<<<<<< HEAD
-                vfn?.attrs?.el ?? vfn?.getSVGElement?.() ?? null;
-              // No VexFlow element = OSMD phantom note with no XML counterpart; skip
-              // without consuming a candidate slot so subsequent notes stay aligned.
-=======
                 vfn?.attrs?.el ??
                 vfn?.getSVGElement?.() ??
                 vfn?.elem ??
                 (vfn?.note_heads?.[0]?.attrs?.el) ??
                 null;
->>>>>>> fccd95c1d2dce5620f270190468754f2e9ece271
+              // No VexFlow element = OSMD phantom note with no XML counterpart; skip
+              // without consuming a candidate slot so subsequent notes stay aligned.
               if (!groupEl) continue;
 
               const nhEl = groupEl.querySelector(".vf-notehead") ?? groupEl;
