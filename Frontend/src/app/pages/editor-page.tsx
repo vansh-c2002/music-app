@@ -15,14 +15,10 @@ import {
   transposeScore,
   keyLabel,
 } from "../lib/parse-musicxml";
-<<<<<<< HEAD
 import type { ParsedNote, ScoreInfo } from "../lib/parse-musicxml";
-=======
-import type { ParsedNote } from "../lib/parse-musicxml";
 import { useAuth } from "../lib/auth-context";
 import { generateThumbnail } from "../lib/generate-thumbnail";
 import { saveScore } from "../lib/save-score";
->>>>>>> fccd95c1d2dce5620f270190468754f2e9ece271
 
 function parseScore(xml: string): { notes: ParsedNote[]; info: ScoreInfo | null } {
   try {
@@ -182,10 +178,10 @@ export function EditorPage() {
     pushXml(updateNotePitch(currentXml, note.measure, note.xmlIndex, step, octave, note.alter));
   }, [currentXml, histIdx]);
 
-<<<<<<< HEAD
   const handleTranspose = (semitones: number) => {
     pushXml(transposeScore(currentXml, semitones));
-=======
+  };
+
   const handleSaveToLibrary = async () => {
     if (!currentUser) {
       toast.error("Sign in to save to your library");
@@ -202,7 +198,6 @@ export function EditorPage() {
     } finally {
       setSaving(false);
     }
->>>>>>> fccd95c1d2dce5620f270190468754f2e9ece271
   };
 
   const handleDownload = () => {
