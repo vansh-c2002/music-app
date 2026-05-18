@@ -184,17 +184,15 @@ const handleFilesUpload = (files: File[]) => {
                   <div className="flex gap-4 justify-center">
                     <button
                       onClick={() => { pendingScoreType.current = "classical"; setShowTypePicker(false); runUpload(pendingFile.current, "classical"); }}
-                      className="px-8 py-5 bg-card border-2 border-border rounded-xl hover:border-accent hover:bg-accent/5 transition-all text-left"
+                      className="px-10 py-5 bg-card border-2 border-border rounded-xl hover:border-accent hover:bg-accent/5 transition-all"
                     >
-                      <div className="text-lg font-semibold text-primary mb-1">Classical</div>
-                      <div className="text-sm text-muted-foreground">Western notation (HOMR)</div>
+                      <div className="text-lg font-semibold text-primary">Classical</div>
                     </button>
                     <button
                       onClick={() => { pendingScoreType.current = "jazz"; setShowTypePicker(false); runUpload(pendingFile.current, "jazz"); }}
-                      className="px-8 py-5 bg-card border-2 border-border rounded-xl hover:border-accent hover:bg-accent/5 transition-all text-left"
+                      className="px-10 py-5 bg-card border-2 border-border rounded-xl hover:border-accent hover:bg-accent/5 transition-all"
                     >
-                      <div className="text-lg font-semibold text-primary mb-1">Jazz</div>
-                      <div className="text-sm text-muted-foreground">Lead sheets (Jazzmus)</div>
+                      <div className="text-lg font-semibold text-primary">Jazz</div>
                     </button>
                   </div>
                   <button
