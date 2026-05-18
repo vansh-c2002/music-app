@@ -4,3 +4,7 @@ package-lock.json
 __pycache__/
 *.pyc
 *.pyo
+homr/
+legato/
+ISMIR-Jazzmus/
+*.ipynb
