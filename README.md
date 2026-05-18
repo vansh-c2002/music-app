@@ -125,8 +125,7 @@ modal deploy Backend/modal_app.py
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/transcribe` | POST | Single image (PNG/JPG) → MusicXML |
-| `/transcribe-multi` | POST | Multiple files or PDF → MusicXML (first page returned) |
+| `/transcribe-multi` | POST | Multiple files or PDF → MusicXML. Requires `score_type` form field: `"classical"` (HOMR) or `"jazz"` (Jazzmus) |
 
 ---
 
