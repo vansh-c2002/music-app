@@ -14,7 +14,9 @@ export function UploadPage() {
   const [fileName, setFileName] = useState("");
   const [showAd, setShowAd] = useState(false);
   const [adCountdown, setAdCountdown] = useState(AD_DURATION);
+  const [showTypePicker, setShowTypePicker] = useState(false);
   const pendingFile = useRef<File[]>([]);
+  const pendingScoreType = useRef<"classical" | "jazz">("classical");
   const navigate = useNavigate();
   const { currentUser, signInWithGoogle } = useAuth();
 
@@ -27,7 +29,7 @@ export function UploadPage() {
         if (n <= 1) {
           clearInterval(interval);
           setShowAd(false);
-          if (pendingFile.current.length > 0) runUpload(pendingFile.current);
+          if (pendingFile.current.length > 0) runUpload(pendingFile.current, pendingScoreType.current);
           return 0;
         }
         return n - 1;
@@ -82,11 +84,17 @@ const handleFilesUpload = (files: File[]) => {
     const names = files.map(f => f.name).join(", ");
     setFileName(names);
     pendingFile.current = files;
-    // setShowAd(true); // re-enable to restore ad countdown
-    runUpload(files);
+    setShowTypePicker(true);
+    // To re-enable the ad flow:
+    // 1. Remove setShowTypePicker(true) above.
+    // 2. Uncomment setShowAd(true) below so the countdown shows before upload.
+    // 3. The useEffect timer will call runUpload(pendingFile.current, pendingScoreType.current)
+    //    after the countdown — pendingScoreType.current is set by the picker buttons,
+    //    so show the picker BEFORE the ad (i.e. setShowTypePicker first, then setShowAd in runUpload).
+    // setShowAd(true);
   };
 
-  const runUpload = async (files: File[]) => {
+  const runUpload = async (files: File[], scoreType: "classical" | "jazz") => {
     if (!currentUser) {
       setError("Please sign in to transcribe sheet music.");
       return;
@@ -95,6 +103,7 @@ const handleFilesUpload = (files: File[]) => {
 
     const formData = new FormData();
     files.forEach(f => formData.append("files", f));
+    formData.append("score_type", scoreType);
 
     try {
       const apiUrl = import.meta.env.VITE_API_URL;
@@ -125,6 +134,7 @@ const handleFilesUpload = (files: File[]) => {
     setError(null);
     setProcessing(false);
     setShowAd(false);
+    setShowTypePicker(false);
     setFileName("");
     pendingFile.current = [];
   };
@@ -164,7 +174,37 @@ const handleFilesUpload = (files: File[]) => {
                 }
               `}
             >
-              {showAd ? (
+              {showTypePicker ? (
+                <div className="text-center">
+                  <div className="w-24 h-24 bg-accent/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <FileMusic className="w-12 h-12 text-accent" />
+                  </div>
+                  <h2 className="text-2xl font-semibold text-primary mb-2">What type of score is this?</h2>
+                  <p className="text-muted-foreground mb-8 text-sm">{fileName}</p>
+                  <div className="flex gap-4 justify-center">
+                    <button
+                      onClick={() => { pendingScoreType.current = "classical"; setShowTypePicker(false); runUpload(pendingFile.current, "classical"); }}
+                      className="px-8 py-5 bg-card border-2 border-border rounded-xl hover:border-accent hover:bg-accent/5 transition-all text-left"
+                    >
+                      <div className="text-lg font-semibold text-primary mb-1">Classical</div>
+                      <div className="text-sm text-muted-foreground">Western notation (HOMR)</div>
+                    </button>
+                    <button
+                      onClick={() => { pendingScoreType.current = "jazz"; setShowTypePicker(false); runUpload(pendingFile.current, "jazz"); }}
+                      className="px-8 py-5 bg-card border-2 border-border rounded-xl hover:border-accent hover:bg-accent/5 transition-all text-left"
+                    >
+                      <div className="text-lg font-semibold text-primary mb-1">Jazz</div>
+                      <div className="text-sm text-muted-foreground">Lead sheets (Jazzmus)</div>
+                    </button>
+                  </div>
+                  <button
+                    onClick={handleReset}
+                    className="mt-6 text-sm text-muted-foreground hover:text-primary transition-colors"
+                  >
+                    ← Choose a different file
+                  </button>
+                </div>
+              ) : showAd ? (
                 <div className="text-center">
                   <div className="w-24 h-24 bg-muted rounded-full flex items-center justify-center mx-auto mb-6 relative">
                     <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 96 96">
