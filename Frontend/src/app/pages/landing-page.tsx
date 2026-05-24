@@ -1,8 +1,6 @@
 import { useState } from "react";
-import { Upload, Music, Play, Edit3, Camera } from "lucide-react";
 import { Link, useNavigate } from "react-router";
-import { Navbar } from "../components/navbar";
-import { motion } from "motion/react";
+import { Camera, Upload, FileEdit } from "lucide-react";
 import { CameraCapture } from "../components/camera-capture";
 import { setCapturedFile } from "../lib/camera-store";
 
@@ -18,172 +16,339 @@ export function LandingPage() {
 
   return (
     <>
-    <div className="min-h-screen bg-background">
-      <Navbar />
-      
-      {/* Hero Section */}
-      <section className="pt-32 pb-20 px-6">
-        <div className="max-w-6xl mx-auto text-center">
-          <motion.h1 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="text-6xl font-bold text-primary mb-6 leading-tight"
-          >
-            Turn Sheet Music into
-            <span className="block text-accent mt-2">Interactive Sound</span>
-          </motion.h1>
-          
-          <motion.p 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-            className="text-xl text-muted-foreground mb-12 max-w-2xl mx-auto"
-          >
-            Upload your sheet music and instantly play, edit, and interact with every note. 
-            Perfect for musicians, composers, and music learners.
-          </motion.p>
-          
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.4 }}
-            className="flex gap-4 justify-center"
-          >
-            <Link 
-              to="/upload"
-              className="px-8 py-4 bg-accent text-accent-foreground rounded-lg hover:opacity-90 transition-all hover:scale-105 flex items-center gap-2 shadow-lg"
-            >
-              <Upload className="w-5 h-5" />
-              Get Started
-            </Link>
-            <button
-              onClick={() => setShowCamera(true)}
-              className="px-8 py-4 bg-card border-2 border-border text-card-foreground rounded-lg hover:border-accent transition-all flex items-center gap-2"
-            >
-              <Camera className="w-5 h-5" />
-              Take a Photo
-            </button>
-          </motion.div>
-        </div>
-      </section>
+      <div className="relative bg-white">
+        {/* Graph paper background */}
+        <div
+          className="fixed inset-0 pointer-events-none opacity-30 z-0"
+          style={{
+            backgroundImage: `
+              linear-gradient(rgba(28, 25, 23, 0.05) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(28, 25, 23, 0.05) 1px, transparent 1px)
+            `,
+            backgroundSize: "20px 20px",
+          }}
+        />
 
-      {/* Illustration Section */}
-      <section className="py-16 px-6">
-        <div className="max-w-5xl mx-auto">
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.8, delay: 0.6 }}
-            className="bg-card rounded-2xl shadow-2xl p-12 border border-border"
-          >
-            <div className="flex items-center justify-between gap-8">
-              <div className="flex-1 text-center">
-                <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Upload className="w-10 h-10 text-primary" />
+        {/* Hero Section */}
+        <section className="relative py-20 px-6 pt-32">
+          <div className="max-w-7xl mx-auto">
+            <div className="grid lg:grid-cols-2 gap-12 items-center">
+              {/* Left side - Text */}
+              <div className="relative z-10">
+                <div className="inline-block px-4 py-2 bg-[#F0FAF4] border border-[#1C1917]/10 rounded-full text-sm font-medium mb-6">
+                  PHOTO → SCORE, INSTANTLY
                 </div>
-                <h3 className="text-lg mb-2">Upload</h3>
-                <p className="text-sm text-muted-foreground">Drop your sheet music</p>
+
+                <h1
+                  className="text-8xl font-serif font-bold mb-6 tracking-tight leading-[0.95]"
+                  style={{
+                    fontFamily: "DM Serif Display, Georgia, serif",
+                    letterSpacing: "-0.03em",
+                  }}
+                >
+                  Oh <span className="italic">Sheet!</span>
+                </h1>
+
+                <p className="text-xl text-[#1C1917]/80 mb-3 leading-relaxed">
+                  Turn any sheet music into an editable digital score —
+                  instantly. Photograph, upload, and export to MuseScore, PDF,
+                  and more.
+                </p>
+
+                <div className="flex flex-wrap gap-4 mt-6">
+                  <Link
+                    to="/upload"
+                    className="inline-block px-8 py-4 bg-[#1C1917] text-white border-2 border-[#1C1917] rounded-full text-lg font-medium hover:translate-y-[-2px] transition-all shadow-[4px_4px_0_#1C1917] hover:shadow-[6px_6px_0_#1C1917]"
+                  >
+                    Scan Your First Score →
+                  </Link>
+                  <button
+                    onClick={() => setShowCamera(true)}
+                    className="inline-flex items-center gap-2 px-8 py-4 bg-white border-2 border-[#1C1917] rounded-full text-lg font-medium hover:translate-y-[-2px] transition-all shadow-[4px_4px_0_#1C1917] hover:shadow-[6px_6px_0_#1C1917]"
+                  >
+                    <Camera className="w-5 h-5" />
+                    Take a Photo
+                  </button>
+                </div>
               </div>
-              
-              <div className="w-12 h-0.5 bg-accent"></div>
-              
-              <div className="flex-1 text-center">
-                <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Music className="w-10 h-10 text-primary" />
+
+              {/* Right side - Before/After */}
+              <div className="relative z-10 grid grid-cols-2 gap-6">
+                {/* Before */}
+                <div className="bg-[#F5F0E8] p-8 rounded-2xl border-2 border-[#1C1917] shadow-[6px_6px_0_#1C1917]">
+                  <div className="text-xs font-medium text-[#1C1917]/60 mb-4">
+                    photo
+                  </div>
+                  <div className="space-y-2 mb-6">
+                    {[0, 1, 2, 3, 4].map((i) => (
+                      <div key={i} className="h-0.5 bg-[#1C1917]/40" />
+                    ))}
+                  </div>
+                  <div className="text-5xl">♪ ♫ ♬</div>
                 </div>
-                <h3 className="text-lg mb-2">Process</h3>
-                <p className="text-sm text-muted-foreground">AI analyzes your music</p>
-              </div>
-              
-              <div className="w-12 h-0.5 bg-accent"></div>
-              
-              <div className="flex-1 text-center">
-                <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Play className="w-10 h-10 text-primary" />
+
+                {/* After */}
+                <div className="bg-white p-8 rounded-2xl border-2 border-[#1C1917] shadow-[6px_6px_0_#1C1917] translate-y-8">
+                  <div className="text-xs font-medium text-[#1C1917]/60 mb-4">
+                    digital score
+                  </div>
+                  <div className="space-y-2 mb-6">
+                    {[0, 1, 2, 3, 4].map((i) => (
+                      <div key={i} className="h-0.5 bg-[#1C1917]" />
+                    ))}
+                  </div>
+                  <div className="text-5xl">♪ ♫ ♬</div>
                 </div>
-                <h3 className="text-lg mb-2">Play</h3>
-                <p className="text-sm text-muted-foreground">Listen & interact</p>
               </div>
             </div>
-          </motion.div>
-        </div>
-      </section>
+          </div>
+        </section>
 
-      {/* Features Section */}
-      <section className="py-20 px-6 bg-card/30">
-        <div className="max-w-6xl mx-auto">
-          <h2 className="text-4xl font-bold text-center text-primary mb-16">
-            Everything you need to master music
-          </h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {[
-              {
-                icon: Play,
-                title: "Interactive Playback",
-                description: "Watch notes highlight as they play. Control tempo and loop sections for practice."
-              },
-              {
-                icon: Edit3,
-                title: "Smart Editing",
-                description: "Edit any note with intuitive tools. Change pitch, duration, and dynamics instantly."
-              },
-              {
-                icon: Music,
-                title: "AI-Powered",
-                description: "Get intelligent suggestions to fix notation errors and improve your scores."
-              }
-            ].map((feature, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: index * 0.1 }}
-                viewport={{ once: true }}
-                className="bg-card p-8 rounded-xl border border-border hover:border-accent transition-all hover:shadow-lg"
-              >
-                <feature.icon className="w-12 h-12 text-accent mb-4" />
-                <h3 className="text-xl mb-3">{feature.title}</h3>
-                <p className="text-muted-foreground">{feature.description}</p>
-              </motion.div>
-            ))}
+        {/* Marquee strip */}
+        <div className="relative z-10 bg-[#1C1917] text-white py-3 overflow-hidden border-y-2 border-[#1C1917]">
+          <div className="animate-marquee whitespace-nowrap text-xs font-bold tracking-wide">
+            <span className="mx-6">SCAN YOUR SCORE ♪</span>
+            <span className="mx-6">EDIT IN SECONDS ♪</span>
+            <span className="mx-6">EXPORT TO MUSESCORE ♪</span>
+            <span className="mx-6">EXPORT TO PDF ♪</span>
+            <span className="mx-6">NO MORE RETYPING ♪</span>
+            <span className="mx-6">OH SHEET! ♪</span>
+            <span className="mx-6">CONSERVATORY APPROVED ♪</span>
+            <span className="mx-6">CLASSICAL + JAZZ ♪</span>
+            <span className="mx-6">SCAN YOUR SCORE ♪</span>
+            <span className="mx-6">EDIT IN SECONDS ♪</span>
+            <span className="mx-6">EXPORT TO MUSESCORE ♪</span>
+            <span className="mx-6">EXPORT TO PDF ♪</span>
+            <span className="mx-6">NO MORE RETYPING ♪</span>
+            <span className="mx-6">OH SHEET! ♪</span>
+            <span className="mx-6">CONSERVATORY APPROVED ♪</span>
+            <span className="mx-6">CLASSICAL + JAZZ ♪</span>
           </div>
         </div>
-      </section>
 
-      {/* CTA Section */}
-      <section className="py-20 px-6">
-        <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-4xl font-bold text-primary mb-6">
-            Ready to transform your sheet music?
-          </h2>
-          <p className="text-xl text-muted-foreground mb-8">
-            Join thousands of musicians using Oh Sheet! every day
-          </p>
-          <Link 
-            to="/upload"
-            className="inline-flex items-center gap-2 px-10 py-5 bg-accent text-accent-foreground rounded-lg hover:opacity-90 transition-all hover:scale-105 shadow-xl"
-          >
-            <Upload className="w-6 h-6" />
-            Start Free Today
-          </Link>
-        </div>
-      </section>
+        {/* How It Works Section */}
+        <section className="relative py-24 px-6 bg-[#F0FAF4]">
+          <div
+            className="absolute inset-0 pointer-events-none opacity-20"
+            style={{
+              backgroundImage: `
+                linear-gradient(rgba(28, 25, 23, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(28, 25, 23, 0.05) 1px, transparent 1px)
+              `,
+              backgroundSize: "20px 20px",
+            }}
+          />
 
-      {/* Footer */}
-      <footer className="border-t border-border py-12 px-6">
-        <div className="max-w-6xl mx-auto text-center text-muted-foreground">
-          <p>© 2026 Oh Sheet! Transform the way you interact with music.</p>
-        </div>
-      </footer>
-    </div>
+          <div className="max-w-7xl mx-auto relative z-10">
+            <div className="text-center mb-6">
+              <div className="text-sm font-medium text-[#1C1917]/60 mb-2">
+                SIMPLE AS A CHORD
+              </div>
+              <h2
+                className="text-7xl font-serif font-bold tracking-tight leading-tight"
+                style={{
+                  fontFamily: "DM Serif Display, Georgia, serif",
+                  letterSpacing: "-0.03em",
+                }}
+              >
+                Three steps to your
+                <br />
+                <span className="italic">perfect</span> digital score
+              </h2>
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-8 mt-16">
+              {[
+                {
+                  num: "01",
+                  title: "Photograph your score",
+                  desc: "Snap a photo with your phone camera or upload a scan",
+                  color: "#B8D4B0",
+                  icon: Camera,
+                },
+                {
+                  num: "02",
+                  title: "Upload to Oh Sheet!",
+                  desc: "Our AI reads every note instantly — PNG, JPG, or PDF",
+                  color: "#F2C4C4",
+                  icon: Upload,
+                },
+                {
+                  num: "03",
+                  title: "Edit & Export",
+                  desc: "Export to MuseScore, PDF, and more in one click",
+                  color: "#B8D8E8",
+                  icon: FileEdit,
+                },
+              ].map((step) => (
+                <div
+                  key={step.num}
+                  className="relative p-8 rounded-2xl border-2 border-[#1C1917] shadow-[6px_6px_0_#1C1917] overflow-hidden"
+                  style={{ backgroundColor: step.color }}
+                >
+                  <div
+                    className="absolute top-0 right-4 text-[12rem] font-bold opacity-10 leading-none"
+                    style={{
+                      fontFamily: "DM Serif Display, Georgia, serif",
+                    }}
+                  >
+                    {step.num}
+                  </div>
+                  <step.icon
+                    className="w-12 h-12 mb-6 relative z-10"
+                    strokeWidth={1.5}
+                  />
+                  <h3 className="text-2xl font-semibold mb-2 relative z-10">
+                    {step.title}
+                  </h3>
+                  <p className="text-sm text-[#1C1917]/70 relative z-10">
+                    {step.desc}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Testimonials Section */}
+        <section className="relative py-24 px-6 bg-[#F9C8D8]">
+          <div
+            className="absolute inset-0 pointer-events-none opacity-20"
+            style={{
+              backgroundImage: `
+                linear-gradient(rgba(28, 25, 23, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(28, 25, 23, 0.1) 1px, transparent 1px)
+              `,
+              backgroundSize: "20px 20px",
+            }}
+          />
+
+          <div className="max-w-7xl mx-auto relative z-10">
+            <div className="mb-6">
+              <div className="inline-block px-4 py-2 bg-[#1C1917] text-white border-2 border-[#1C1917] rounded-full text-xs font-bold tracking-widest shadow-[4px_4px_0_#1C1917]">
+                REAL MUSICIANS. REAL RESULTS.
+              </div>
+            </div>
+
+            <h2
+              className="text-7xl font-serif font-bold mb-16 tracking-tight"
+              style={{
+                fontFamily: "DM Serif Display, Georgia, serif",
+                letterSpacing: "-0.03em",
+              }}
+            >
+              From the music stand
+            </h2>
+
+            <div className="grid md:grid-cols-3 gap-8">
+              {[
+                {
+                  quote:
+                    "I'd rather spend 5 minutes reviewing flagged errors than 30 minutes fixing silent mistakes.",
+                  author: "Student | Knox College Jazz Band",
+                  accent: "#F5E6A0",
+                },
+                {
+                  quote:
+                    "My handwritten arrangements used to live in a drawer. Now I can keep them with me everywhere.",
+                  author: "Student | Cherry Street Combo",
+                  accent: "#B8D4B0",
+                },
+                {
+                  quote:
+                    "It would take me hours to add the notes one by one and then edit them but Oh Sheet has reduced that time to minutes.",
+                  author: "Music Director | Knox College",
+                  accent: "#B8D8E8",
+                },
+              ].map((testimonial, i) => (
+                <div
+                  key={i}
+                  className="bg-white p-8 rounded-2xl border-2 border-[#1C1917] shadow-[6px_6px_0_#1C1917] transform hover:-translate-y-1 transition-transform"
+                  style={{ rotate: `${(i - 1) * 0.5}deg` }}
+                >
+                  <div
+                    className="h-3 -mx-8 -mt-8 mb-6 rounded-t-xl"
+                    style={{ backgroundColor: testimonial.accent }}
+                  />
+                  <div className="text-7xl mb-4 leading-none text-[#1C1917]/20 font-serif">
+                    "
+                  </div>
+                  <p className="text-base mb-6 leading-relaxed">
+                    {testimonial.quote}
+                  </p>
+                  <p className="text-xs text-[#1C1917]/60 font-medium">
+                    — {testimonial.author}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* CTA Section */}
+        <section className="relative py-24 px-6 bg-[#F5E6A0] text-[#1C1917]">
+          <div
+            className="absolute inset-0 pointer-events-none opacity-20"
+            style={{
+              backgroundImage: `
+                linear-gradient(rgba(28, 25, 23, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(28, 25, 23, 0.1) 1px, transparent 1px)
+              `,
+              backgroundSize: "20px 20px",
+            }}
+          />
+          <div className="max-w-4xl mx-auto text-center relative z-10">
+            <h2
+              className="text-7xl font-serif font-bold mb-6 tracking-tight leading-tight"
+              style={{
+                fontFamily: "DM Serif Display, Georgia, serif",
+                letterSpacing: "-0.03em",
+              }}
+            >
+              Your scores deserve
+              <br />
+              to be heard.
+            </h2>
+            <p className="text-xl mb-8 text-[#1C1917]/70">
+              Sign in to get started — free to try.
+            </p>
+            <Link
+              to="/upload"
+              className="inline-block px-8 py-4 bg-[#1C1917] text-white border-2 border-[#1C1917] rounded-full text-lg font-medium hover:translate-y-[-2px] transition-all shadow-[4px_4px_0_#1C1917] hover:shadow-[6px_6px_0_#1C1917]"
+            >
+              Scan Your First Score →
+            </Link>
+          </div>
+        </section>
+
+        {/* Footer */}
+        <footer className="bg-white border-t border-[#1C1917]/10 py-8 px-6 relative z-10">
+          <div className="max-w-7xl mx-auto text-center text-sm text-[#1C1917]/60">
+            <p>© 2026 Oh Sheet! — Stop copying notes. Start making music.</p>
+          </div>
+        </footer>
+
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&display=swap');
+
+          @keyframes marquee {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+          }
+
+          .animate-marquee {
+            display: inline-block;
+            animation: marquee 20s linear infinite;
+          }
+        `}</style>
+      </div>
+
       {showCamera && (
         <CameraCapture
           onCapture={handleCapture}
           onClose={() => setShowCamera(false)}
         />
       )}
-    </>  
+    </>
   );
 }
