@@ -12,6 +12,8 @@ export function UploadPage() {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState("");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [stage, setStage] = useState<"uploading" | "analyzing" | "converting">("uploading");
   const [showAd, setShowAd] = useState(false);
   const [adCountdown, setAdCountdown] = useState(AD_DURATION);
   const [showTypePicker, setShowTypePicker] = useState(false);
@@ -84,6 +86,14 @@ const handleFilesUpload = (files: File[]) => {
     const names = files.map(f => f.name).join(", ");
     setFileName(names);
     pendingFile.current = files;
+
+    // generate preview for images only, not PDFs
+    if (files[0].type !== "application/pdf") {
+      setPreviewUrl(URL.createObjectURL(files[0]));
+    } else {
+      setPreviewUrl(null);
+    }
+
     setShowTypePicker(true);
     // To re-enable the ad flow:
     // 1. Remove setShowTypePicker(true) above.
@@ -111,6 +121,7 @@ const handleFilesUpload = (files: File[]) => {
 
       const idToken = await currentUser.getIdToken();
 
+      setStage("uploading");
       const response = await fetch(`${apiUrl}/transcribe-multi`, {
         method: "POST",
         headers: { Authorization: `Bearer ${idToken}` },
@@ -122,7 +133,13 @@ const handleFilesUpload = (files: File[]) => {
         throw new Error(detail || `Server error: ${response.status}`);
       }
 
+      setStage("analyzing");
       const musicXml = await response.text();
+
+      setStage("converting");
+      await new Promise(r => setTimeout(r, 800));
+
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
       navigate("/editor", { state: { musicXml, fileName: files[0].name } });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -136,6 +153,7 @@ const handleFilesUpload = (files: File[]) => {
     setShowAd(false);
     setShowTypePicker(false);
     setFileName("");
+    if (previewUrl) { URL.revokeObjectURL(previewUrl); setPreviewUrl(null); }
     pendingFile.current = [];
   };
 
@@ -251,24 +269,68 @@ const handleFilesUpload = (files: File[]) => {
                   )}
                 </div>
               ) : processing ? (
-                <div className="text-center">
-                  <div className="w-24 h-24 bg-accent/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <FileMusic className="w-12 h-12 text-accent animate-pulse" />
-                  </div>
-                  <h2 className="text-2xl font-semibold text-primary mb-3">Analyzing Your Sheet Music</h2>
-                  <p className="text-muted-foreground mb-2">{fileName}</p>
-                  <p className="text-sm text-muted-foreground mb-8">
-                    This usually takes 3–5 minutes. Please keep this tab open.
-                  </p>
-                  <div className="max-w-md mx-auto">
-                    <div className="w-full bg-muted rounded-full h-3 overflow-hidden">
-                      <motion.div
-                        className="h-full bg-accent rounded-full"
-                        animate={{ x: ["-100%", "100%"] }}
-                        transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
-                        style={{ width: "40%" }}
+                <div className="flex flex-col md:flex-row gap-8 items-center justify-center">
+                  {/* thumbnail */}
+                  {previewUrl && (
+                    <div className="flex-shrink-0">
+                      <img
+                        src={previewUrl}
+                        alt="Uploaded sheet music"
+                        className="w-40 h-52 object-cover rounded-xl border border-border shadow-md"
                       />
                     </div>
+                  )}
+
+                  {/* stages */}
+                  <div className="flex flex-col gap-5 min-w-[220px]">
+                    <p className="text-sm text-muted-foreground mb-1">{fileName}</p>
+
+                    {(["uploading", "analyzing", "converting"] as const).map((s, i) => {
+                      const labels = {
+                        uploading: "Uploading file",
+                        analyzing: "Analyzing sheet music",
+                        converting: "Converting to MusicXML",
+                      };
+                      const stageIndex = ["uploading", "analyzing", "converting"].indexOf(stage);
+                      const isDone = i < stageIndex;
+                      const isCurrent = s === stage;
+
+                      return (
+                        <div key={s} className="flex items-center gap-3">
+                          {/* circle indicator */}
+                          <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center border-2 transition-all
+                            ${isDone ? "bg-accent border-accent" : isCurrent ? "border-accent animate-pulse" : "border-border"}`}>
+                            {isDone && (
+                              <svg className="w-3 h-3 text-background" fill="none" viewBox="0 0 12 12">
+                                <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            )}
+                          </div>
+
+                          <div className="flex-1">
+                            <p className={`text-sm font-medium transition-colors
+                              ${isCurrent ? "text-accent" : isDone ? "text-primary" : "text-muted-foreground"}`}>
+                              {labels[s]}
+                            </p>
+                            {/* shimmer bar only under active step */}
+                            {isCurrent && (
+                              <div className="mt-1.5 w-full bg-muted rounded-full h-1.5 overflow-hidden">
+                                <motion.div
+                                  className="h-full bg-accent rounded-full"
+                                  animate={{ x: ["-100%", "100%"] }}
+                                  transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
+                                  style={{ width: "40%" }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    <p className="text-xs text-muted-foreground mt-2">
+                      This usually takes 3–5 minutes. Please keep this tab open.
+                    </p>
                   </div>
                 </div>
               ) : (
