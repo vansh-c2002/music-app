@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from "react";
-import { Upload, FileMusic, AlertCircle, LogIn } from "lucide-react";
+import { Upload, FileMusic, AlertCircle, LogIn, Camera } from "lucide-react";
 import { useNavigate } from "react-router";
 import { Navbar } from "../components/navbar";
 import { motion } from "motion/react";
 import { useAuth } from "../lib/auth-context";
+import { CameraCapture } from "../components/camera-capture";
+import { getCapturedFile, setCapturedFile } from "../lib/camera-store";
 
 const AD_DURATION = 30;
 
@@ -20,7 +22,16 @@ export function UploadPage() {
   const pendingFile = useRef<File[]>([]);
   const pendingScoreType = useRef<"classical" | "jazz">("classical");
   const navigate = useNavigate();
+  const [showCamera, setShowCamera] = useState(false);
   const { currentUser, signInWithGoogle } = useAuth();
+
+  useEffect(() => {
+    const preloaded = getCapturedFile();
+    if (preloaded) {
+      setCapturedFile(null);
+      handleFilesUpload([preloaded]);
+    }
+  }, []);
 
   useEffect(() => {
     if (!showAd) return;
@@ -158,6 +169,7 @@ const handleFilesUpload = (files: File[]) => {
   };
 
   return (
+    <>
     <div className="min-h-screen bg-background">
       <Navbar />
 
@@ -345,19 +357,28 @@ const handleFilesUpload = (files: File[]) => {
 
                   <p className="text-muted-foreground mb-8">or</p>
 
-                  <label className="inline-block">
-                    <input
-                      type="file"
-                      accept=".png,.jpg,.jpeg,.pdf"
-                      onChange={handleFileSelect}
-                      className="hidden"
-                      multiple
-                    />
-                    <span className="px-8 py-4 bg-accent text-accent-foreground rounded-lg cursor-pointer hover:opacity-90 transition-all inline-flex items-center gap-2">
-                      <FileMusic className="w-5 h-5" />
-                      Browse Files
-                    </span>
-                  </label>
+                  <div className="flex flex-wrap gap-3 justify-center">
+                    <label className="inline-block">
+                      <input
+                        type="file"
+                        accept=".png,.jpg,.jpeg,.pdf"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                        multiple
+                      />
+                      <span className="px-8 py-4 bg-accent text-accent-foreground rounded-lg cursor-pointer hover:opacity-90 transition-all inline-flex items-center gap-2">
+                        <FileMusic className="w-5 h-5" />
+                        Browse Files
+                      </span>
+                    </label>
+                    <button
+                      onClick={() => setShowCamera(true)}
+                      className="px-8 py-4 bg-card border-2 border-border text-card-foreground rounded-lg hover:border-accent transition-all inline-flex items-center gap-2"
+                    >
+                      <Camera className="w-5 h-5" />
+                      Use Camera
+                    </button>
+                  </div>
 
                   <p className="text-sm text-muted-foreground mt-8">
                     Supported formats: PNG, JPG, PDF · Multiple files supported · Max 10MB each
@@ -394,5 +415,12 @@ const handleFilesUpload = (files: File[]) => {
         </div>
       </div>
     </div>
+      {showCamera && (
+        <CameraCapture
+          onCapture={(file) => { setShowCamera(false); handleFilesUpload([file]); }}
+          onClose={() => setShowCamera(false)}
+        />
+      )}
+    </>
   );
 }

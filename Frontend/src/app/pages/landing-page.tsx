@@ -1,10 +1,23 @@
-import { Upload, Music, Play, Edit3 } from "lucide-react";
-import { Link } from "react-router";
+import { useState } from "react";
+import { Upload, Music, Play, Edit3, Camera } from "lucide-react";
+import { Link, useNavigate } from "react-router";
 import { Navbar } from "../components/navbar";
 import { motion } from "motion/react";
+import { CameraCapture } from "../components/camera-capture";
+import { setCapturedFile } from "../lib/camera-store";
 
 export function LandingPage() {
+  const [showCamera, setShowCamera] = useState(false);
+  const navigate = useNavigate();
+
+  const handleCapture = (file: File) => {
+    setCapturedFile(file);
+    setShowCamera(false);
+    navigate("/upload");
+  };
+
   return (
+    <>
     <div className="min-h-screen bg-background">
       <Navbar />
       
@@ -44,8 +57,12 @@ export function LandingPage() {
               <Upload className="w-5 h-5" />
               Get Started
             </Link>
-            <button className="px-8 py-4 bg-card border-2 border-border text-card-foreground rounded-lg hover:border-accent transition-all">
-              Watch Demo
+            <button
+              onClick={() => setShowCamera(true)}
+              className="px-8 py-4 bg-card border-2 border-border text-card-foreground rounded-lg hover:border-accent transition-all flex items-center gap-2"
+            >
+              <Camera className="w-5 h-5" />
+              Take a Photo
             </button>
           </motion.div>
         </div>
@@ -161,5 +178,12 @@ export function LandingPage() {
         </div>
       </footer>
     </div>
+      {showCamera && (
+        <CameraCapture
+          onCapture={handleCapture}
+          onClose={() => setShowCamera(false)}
+        />
+      )}
+    </>  
   );
 }
