@@ -1,17 +1,14 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router";
-import {
-  collection,
-  query,
-  orderBy,
-  onSnapshot,
-} from "firebase/firestore";
-import { Music2, Download, Trash2, FolderOpen, BookOpen } from "lucide-react";
+import { useNavigate, Link } from "react-router";
+import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
+import { Music2, Download, Trash2, FolderOpen } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "../lib/firebase";
 import { useAuth } from "../lib/auth-context";
 import { deleteScore, type SavedScore } from "../lib/save-score";
 import { Navbar } from "../components/navbar";
+
+type ScoreTypeFilter = "all" | "classical" | "jazz";
 
 function formatDate(date: Date): string {
   return date.toLocaleDateString("en-US", {
@@ -27,15 +24,15 @@ export function LibraryPage() {
   const [scores, setScores] = useState<SavedScore[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<ScoreTypeFilter>("all");
 
   useEffect(() => {
     if (!currentUser) return;
-
     const q = query(
       collection(db, "users", currentUser.uid, "scores"),
       orderBy("createdAt", "desc")
     );
-
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const items: SavedScore[] = snapshot.docs.map((doc) => {
         const data = doc.data();
@@ -47,13 +44,17 @@ export function LibraryPage() {
           updatedAt: data.updatedAt?.toDate() ?? new Date(),
           musicXml: data.musicXml ?? "",
           thumbnailDataUrl: data.thumbnailDataUrl ?? null,
-          info: data.info ?? { keyFifths: 0, keyMode: "major", beats: 4, beatType: 4 },
+          info: data.info ?? {
+            keyFifths: 0,
+            keyMode: "major",
+            beats: 4,
+            beatType: 4,
+          },
         };
       });
       setScores(items);
       setLoading(false);
     });
-
     return unsubscribe;
   }, [currentUser]);
 
@@ -86,48 +87,133 @@ export function LibraryPage() {
     }
   };
 
+  const pastelColors = [
+    "#F2C4C4",
+    "#B8D8E8",
+    "#B8D4B0",
+    "#F5E6A0",
+    "#F9C8D8",
+    "#B8D8E8",
+  ];
+
   return (
-    <div className="min-h-screen bg-background">
+    <div className="relative min-h-screen bg-white">
       <Navbar />
 
-      <div className="pt-28 pb-20 px-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex items-center gap-3 mb-10">
-            <BookOpen className="w-7 h-7 text-accent" />
-            <h1 className="text-3xl font-bold text-primary">My Library</h1>
+      {/* Graph paper background */}
+      <div
+        className="fixed inset-0 pointer-events-none opacity-30 z-0"
+        style={{
+          backgroundImage: `
+            linear-gradient(rgba(28, 25, 23, 0.05) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(28, 25, 23, 0.05) 1px, transparent 1px)
+          `,
+          backgroundSize: "20px 20px",
+        }}
+      />
+
+      <div className="relative pt-28 pb-20 px-6 max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="flex items-start justify-between mb-12">
+          <div>
+            <h1
+              className="text-7xl font-serif font-bold mb-4 tracking-tight"
+              style={{
+                fontFamily: "DM Serif Display, Georgia, serif",
+                letterSpacing: "-0.03em",
+              }}
+            >
+              Your Score Library
+            </h1>
+            <p className="text-xl text-[#1C1917]/70">
+              All your converted sheet music in one place
+            </p>
           </div>
 
-          {loading ? (
-            <div className="flex items-center justify-center py-32">
-              <div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : scores.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-32 text-center">
-              <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mb-6">
-                <Music2 className="w-10 h-10 text-muted-foreground" />
-              </div>
-              <h2 className="text-xl font-semibold text-primary mb-2">No scores yet</h2>
-              <p className="text-muted-foreground mb-6 max-w-sm">
-                Transcribe a sheet music image and save it to your library.
-              </p>
+          {/* Filter tabs */}
+          <div className="flex items-center gap-2 bg-white border-2 border-[#1C1917] rounded-full p-1 shadow-[4px_4px_0_#1C1917] mt-4">
+            {(["all", "classical", "jazz"] as ScoreTypeFilter[]).map((tab) => (
               <button
-                onClick={() => navigate("/upload")}
-                className="px-6 py-2.5 bg-accent text-accent-foreground rounded-lg hover:opacity-90 transition-opacity"
+                key={tab}
+                onClick={() => setFilter(tab)}
+                className={`px-6 py-2 rounded-full transition-all font-medium text-sm capitalize
+                  ${filter === tab
+                    ? "bg-[#1C1917] text-white"
+                    : "text-[#1C1917] hover:bg-[#1C1917]/5"
+                  }`}
               >
-                Upload Sheet Music
+                {tab}
               </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {scores.map((score) => (
+            ))}
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-32">
+            <div className="w-8 h-8 border-4 border-[#1C1917] border-t-[#7FFFD4] rounded-full animate-spin" />
+          </div>
+        ) : scores.length === 0 ? (
+          /* Empty state */
+          <div className="text-center py-24">
+            <div className="relative w-64 h-24 mx-auto mb-8">
+              {[0, 1, 2, 3, 4].map((i) => (
                 <div
-                  key={score.id}
-                  className="bg-card border border-border rounded-xl overflow-hidden hover:border-accent/50 transition-colors group"
+                  key={i}
+                  className="absolute left-0 right-0 border-t-2 border-[#1C1917]/40"
+                  style={{ top: `${i * 16}px` }}
+                />
+              ))}
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-5xl">
+                𝄽
+              </div>
+            </div>
+            <p className="text-2xl text-[#1C1917]/60 mb-8">
+              No scores yet — upload your first one.
+            </p>
+            <Link
+              to="/upload"
+              className="inline-block px-8 py-3 bg-[#7FFFD4] border-2 border-[#1C1917] rounded-full font-medium hover:translate-y-[-2px] transition-all shadow-[4px_4px_0_#1C1917] hover:shadow-[6px_6px_0_#1C1917]"
+            >
+              Upload Score →
+            </Link>
+          </div>
+        ) : (
+          /* Score grid */
+          <div className="grid md:grid-cols-3 gap-8">
+            {scores.map((score, idx) => (
+              <div
+                key={score.id}
+                className="group cursor-pointer"
+                onMouseEnter={() => setHoveredId(score.id)}
+                onMouseLeave={() => setHoveredId(null)}
+              >
+                <div
+                  className={`relative rounded-2xl border-2 border-[#1C1917] overflow-hidden transition-all
+                    ${hoveredId === score.id
+                      ? "shadow-[2px_2px_0_#1C1917] -translate-x-1 -translate-y-1"
+                      : "shadow-[6px_6px_0_#1C1917]"
+                    }`}
                 >
+                  {/* Thumbnail with pastel background + staff lines texture */}
                   <div
-                    className="aspect-[3/2] bg-muted flex items-center justify-center overflow-hidden cursor-pointer relative"
+                    className="relative h-48 flex items-center justify-center overflow-hidden"
+                    style={{
+                      backgroundColor:
+                        pastelColors[idx % pastelColors.length],
+                    }}
                     onClick={() => handleOpen(score)}
                   >
+                    {/* Faint staff lines */}
+                    <div className="absolute inset-0 opacity-20">
+                      {[0, 1, 2, 3, 4].map((i) => (
+                        <div
+                          key={i}
+                          className="absolute left-8 right-8 border-t border-[#1C1917]"
+                          style={{ top: `${32 + i * 16}px` }}
+                        />
+                      ))}
+                    </div>
+
                     {score.thumbnailDataUrl ? (
                       <img
                         src={score.thumbnailDataUrl}
@@ -135,55 +221,80 @@ export function LibraryPage() {
                         className="w-full h-full object-cover object-top"
                       />
                     ) : (
-                      <Music2 className="w-12 h-12 text-muted-foreground/40" />
+                      <Music2
+                        className="w-16 h-16 text-[#1C1917]/30 relative z-10"
+                        strokeWidth={1}
+                      />
                     )}
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
-                      <FolderOpen className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
+
+                    {/* Hover overlay */}
+                    <div
+                      className={`absolute inset-0 bg-[#1C1917]/10 flex items-center justify-center transition-opacity
+                        ${hoveredId === score.id ? "opacity-100" : "opacity-0"}`}
+                    >
+                      <FolderOpen className="w-10 h-10 text-white drop-shadow-lg" />
                     </div>
                   </div>
 
-                  <div className="p-4">
-                    <h3
-                      className="font-semibold text-primary truncate cursor-pointer hover:text-accent transition-colors mb-1"
-                      onClick={() => handleOpen(score)}
-                    >
+                  {/* Dark info strip */}
+                  <div
+                    className="bg-[#1C1917] text-white p-4 relative overflow-hidden"
+                    onClick={() => handleOpen(score)}
+                  >
+                    <h3 className="font-semibold truncate mb-1">
                       {score.title}
                     </h3>
-                    <p className="text-xs text-muted-foreground mb-4">
+                    <p className="text-xs text-white/60">
                       {formatDate(score.createdAt)}
                     </p>
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleOpen(score)}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs bg-accent text-accent-foreground rounded-lg hover:opacity-90 transition-opacity"
-                      >
-                        <FolderOpen className="w-3.5 h-3.5" />
-                        Open
-                      </button>
-                      <button
-                        onClick={() => handleDownload(score)}
-                        className="p-1.5 rounded-lg bg-muted hover:bg-muted/80 transition-colors"
-                        title="Download MusicXML"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(score)}
-                        disabled={deletingId === score.id}
-                        className="p-1.5 rounded-lg bg-muted hover:bg-destructive/20 hover:text-destructive transition-colors disabled:opacity-50"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                    {/* Slide-up Open button on hover */}
+                    <div
+                      className={`absolute bottom-full left-0 right-0 bg-[#7FFFD4] text-[#1C1917] py-3 text-center font-medium text-sm transition-all
+                        ${hoveredId === score.id
+                          ? "translate-y-0 opacity-100"
+                          : "translate-y-2 opacity-0"
+                        }`}
+                    >
+                      Open →
                     </div>
                   </div>
+
+                  {/* Action buttons */}
+                  <div className="bg-white border-t border-[#1C1917]/10 p-3 flex items-center gap-2">
+                    <button
+                      onClick={() => handleOpen(score)}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs bg-[#7FFFD4] border border-[#1C1917] rounded-lg hover:opacity-90 transition-opacity font-medium"
+                    >
+                      <FolderOpen className="w-3.5 h-3.5" />
+                      Open
+                    </button>
+                    <button
+                      onClick={() => handleDownload(score)}
+                      className="p-1.5 rounded-lg border border-[#1C1917]/20 hover:border-[#1C1917] hover:bg-[#F5F0E8] transition-colors"
+                      title="Download MusicXML"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(score)}
+                      disabled={deletingId === score.id}
+                      className="p-1.5 rounded-lg border border-[#1C1917]/20 hover:border-red-400 hover:bg-red-50 hover:text-red-500 transition-colors disabled:opacity-50"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
+
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&display=swap');
+      `}</style>
     </div>
   );
 }
