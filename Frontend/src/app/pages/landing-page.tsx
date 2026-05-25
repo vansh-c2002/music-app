@@ -11,11 +11,11 @@ function FloatingNotes() {
   const notes = Array.from({ length: 16 }, (_, i) => ({
     id: i,
     note: NOTES[i % NOTES.length],
-    left: `${5 + (i * 6.2) % 90}%`,
+    top: `${5 + (i * 5.8) % 85}%`,
     delay: `${(i * 0.7) % 6}s`,
     duration: `${6 + (i * 1.1) % 6}s`,
     size: `${14 + (i * 3) % 20}px`,
-    opacity: 0.12 + (i % 4) * 0.06,
+    opacity: 0.32 + (i % 4) * 0.06,
   }));
 
   return (
@@ -23,24 +23,24 @@ function FloatingNotes() {
       {notes.map((n) => (
         <div
           key={n.id}
-          className="absolute bottom-0 select-none"
+          className="absolute left-0 select-none"
           style={{
-            left: n.left,
+            top: n.top,
             fontSize: n.size,
             color: "#1C1917",
             opacity: n.opacity,
-            animation: `floatUp ${n.duration} ${n.delay} infinite ease-in`,
+            animation: `floatRight ${n.duration} ${n.delay} infinite ease-in`,
           }}
         >
           {n.note}
         </div>
       ))}
       <style>{`
-        @keyframes floatUp {
-          0%   { transform: translateY(0)   rotate(0deg);   opacity: var(--start-opacity, 0.15); }
-          20%  { opacity: var(--start-opacity, 0.15); }
-          80%  { opacity: var(--start-opacity, 0.15); }
-          100% { transform: translateY(-700px) rotate(20deg); opacity: 0; }
+        @keyframes floatRight {
+          0%   { transform: translateX(0)     rotate(0deg);  opacity: 0; }
+          10%  { opacity: var(--start-opacity, 0.35); }
+          80%  { opacity: var(--start-opacity, 0.35); }
+          100% { transform: translateX(110vw) rotate(20deg); opacity: 0; }
         }
       `}</style>
     </div>
@@ -152,29 +152,33 @@ export function LandingPage() {
         {/* Marquee strip */}
         <div className="relative z-10 bg-[#1C1917] text-white py-3 overflow-hidden border-y-2 border-[#1C1917]">
           <div className="animate-marquee whitespace-nowrap text-xs font-bold tracking-wide">
-            <span className="mx-6">SCAN YOUR SCORE ♪</span>
-            <span className="mx-6">EDIT IN SECONDS ♪</span>
-            <span className="mx-6">EXPORT TO MUSESCORE ♪</span>
-            <span className="mx-6">EXPORT TO PDF ♪</span>
-            <span className="mx-6">NO MORE RETYPING ♪</span>
-            <span className="mx-6">OH SHEET! ♪</span>
-            <span className="mx-6">FREE TO TRY ♪</span>
+            <span className="mx-6">PHOTOGRAPH IT ♪</span>
+            <span className="mx-6">UPLOAD IT ♪</span>
+            <span className="mx-6">EDIT IT ♪</span>
+            <span className="mx-6">EXPORT IT ♪</span>
+            <span className="mx-6">NO MORE HAND COPYING ♪</span>
+            <span className="mx-6">WORKS WITH MUSESCORE ♪</span>
             <span className="mx-6">CLASSICAL + JAZZ ♪</span>
-            <span className="mx-6">SCAN YOUR SCORE ♪</span>
-            <span className="mx-6">EDIT IN SECONDS ♪</span>
-            <span className="mx-6">EXPORT TO MUSESCORE ♪</span>
-            <span className="mx-6">EXPORT TO PDF ♪</span>
-            <span className="mx-6">NO MORE RETYPING ♪</span>
-            <span className="mx-6">OH SHEET! ♪</span>
+            <span className="mx-6">PDF SUPPORT ♪</span>
+            <span className="mx-6">SAVE YOUR SCORES ♪</span>
             <span className="mx-6">FREE TO TRY ♪</span>
+            <span className="mx-6">PHOTOGRAPH IT ♪</span>
+            <span className="mx-6">UPLOAD IT ♪</span>
+            <span className="mx-6">EDIT IT ♪</span>
+            <span className="mx-6">EXPORT IT ♪</span>
+            <span className="mx-6">NO MORE HAND COPYING ♪</span>
+            <span className="mx-6">WORKS WITH MUSESCORE ♪</span>
             <span className="mx-6">CLASSICAL + JAZZ ♪</span>
+            <span className="mx-6">PDF SUPPORT ♪</span>
+            <span className="mx-6">SAVE YOUR SCORES ♪</span>
+            <span className="mx-6">FREE TO TRY ♪</span>
           </div>
         </div>
 
         {/* How It Works Section */}
         <section className="relative py-24 px-6 bg-[#F0FAF4]">
           <div
-            className="absolute inset-0 pointer-events-none opacity-20"
+            className="absolute inset-0 pointer-events-none opacity-40"
             style={{
               backgroundImage: `
                 linear-gradient(rgba(28, 25, 23, 0.05) 1px, transparent 1px),
@@ -258,7 +262,7 @@ export function LandingPage() {
         {/* Testimonials Section */}
         <section className="relative py-24 px-6 bg-[#F9C8D8]">
           <div
-            className="absolute inset-0 pointer-events-none opacity-20"
+            className="absolute inset-0 pointer-events-none opacity-40"
             style={{
               backgroundImage: `
                 linear-gradient(rgba(28, 25, 23, 0.1) 1px, transparent 1px),
@@ -333,7 +337,7 @@ export function LandingPage() {
         {/* CTA Section */}
         <section className="relative py-24 px-6 bg-[#F5E6A0] text-[#1C1917]">
           <div
-            className="absolute inset-0 pointer-events-none opacity-20"
+            className="absolute inset-0 pointer-events-none opacity-40"
             style={{
               backgroundImage: `
                 linear-gradient(rgba(28, 25, 23, 0.1) 1px, transparent 1px),
