@@ -50,7 +50,7 @@ function FloatingNotes() {
       <style>{`
         @keyframes slideLeft {
           from { transform: translateX(100vw); }
-          to   { transform: translateX(-100px); }
+          to   { transform: translateX(-100vw); }
         }
       `}</style>
     </div>
