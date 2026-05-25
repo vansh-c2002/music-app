@@ -56,13 +56,11 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
-
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(video, 0, 0);
-
     const url = canvas.toDataURL("image/jpeg", 0.92);
     setPreviewUrl(url);
     stopStream();
@@ -94,7 +92,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-[#1C1917]/70 backdrop-blur-sm p-4"
         onClick={(e) => { if (e.target === e.currentTarget) { stopStream(); onClose(); } }}
       >
         <motion.div
@@ -102,27 +100,29 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
           transition={{ duration: 0.25 }}
-          className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden"
+          className="bg-white border-2 border-[#1C1917] rounded-2xl shadow-[6px_6px_0_#1C1917] w-full max-w-2xl overflow-hidden"
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <div className="flex items-center justify-between px-6 py-4 border-b-2 border-[#1C1917] bg-[#F5F0E8]">
             <div className="flex items-center gap-2">
-              <Camera className="w-5 h-5 text-accent" />
-              <span className="font-semibold text-primary">
-                {cameraState === "preview" ? "Preview" : "Take a Photo"}
+              <Camera className="w-5 h-5 text-[#1C1917]" />
+              <span
+                className="font-bold text-[#1C1917]"
+                style={{ fontFamily: "DM Serif Display, Georgia, serif" }}
+              >
+                {cameraState === "preview" ? "Preview Photo" : "Take a Photo"}
               </span>
             </div>
             <button
               onClick={() => { stopStream(); onClose(); }}
-              className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted transition-colors"
+              className="w-8 h-8 flex items-center justify-center rounded-full border-2 border-[#1C1917] hover:bg-[#F2C4C4] transition-colors"
             >
-              <X className="w-4 h-4 text-muted-foreground" />
+              <X className="w-4 h-4 text-[#1C1917]" />
             </button>
           </div>
 
           {/* Body */}
-          <div className="relative bg-black aspect-video flex items-center justify-center">
-            {/* Live video */}
+          <div className="relative bg-[#1C1917] aspect-video flex items-center justify-center">
             <video
               ref={videoRef}
               autoPlay
@@ -130,8 +130,6 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
               muted
               className={`w-full h-full object-cover ${cameraState === "live" ? "block" : "hidden"}`}
             />
-
-            {/* Preview image */}
             {cameraState === "preview" && previewUrl && (
               <img
                 src={previewUrl}
@@ -139,57 +137,50 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                 className="w-full h-full object-contain"
               />
             )}
-
-            {/* Requesting / loading */}
             {cameraState === "requesting" && (
               <div className="flex flex-col items-center gap-3 text-white">
-                <div className="w-10 h-10 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <p className="text-sm text-white/70">Starting camera…</p>
+                <div className="w-10 h-10 border-2 border-white/30 border-t-[#7FFFD4] rounded-full animate-spin" />
+                <p className="text-sm text-white/60">Starting camera…</p>
               </div>
             )}
-
-            {/* Error */}
             {cameraState === "error" && (
               <div className="flex flex-col items-center gap-4 text-white px-8 text-center">
-                <Camera className="w-12 h-12 text-white/40" />
-                <p className="text-sm text-white/70">{errorMessage}</p>
+                <Camera className="w-12 h-12 text-white/30" />
+                <p className="text-sm text-white/60">{errorMessage}</p>
                 <button
                   onClick={startCamera}
-                  className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm hover:opacity-90 transition-all"
+                  className="px-4 py-2 bg-[#7FFFD4] text-[#1C1917] rounded-full text-sm font-medium hover:opacity-90 transition-all"
                 >
                   Try Again
                 </button>
               </div>
             )}
-
-            {/* Hidden canvas */}
             <canvas ref={canvasRef} className="hidden" />
           </div>
 
-          {/* Footer actions */}
-          <div className="px-6 py-5 flex items-center justify-center gap-4">
+          {/* Footer */}
+          <div className="px-6 py-5 flex items-center justify-center gap-4 bg-white">
             {cameraState === "live" && (
               <button
                 onClick={capturePhoto}
-                className="w-16 h-16 rounded-full bg-accent hover:opacity-90 transition-all hover:scale-105 flex items-center justify-center shadow-lg"
+                className="w-16 h-16 rounded-full bg-[#1C1917] border-2 border-[#1C1917] hover:opacity-90 transition-all hover:scale-105 flex items-center justify-center shadow-[3px_3px_0_#1C1917]"
                 aria-label="Capture photo"
               >
-                <Camera className="w-7 h-7 text-accent-foreground" />
+                <Camera className="w-7 h-7 text-[#7FFFD4]" />
               </button>
             )}
-
             {cameraState === "preview" && (
               <>
                 <button
                   onClick={retake}
-                  className="flex items-center gap-2 px-5 py-3 bg-muted text-primary rounded-lg hover:bg-muted/80 transition-all"
+                  className="flex items-center gap-2 px-5 py-2.5 border-2 border-[#1C1917] bg-white text-[#1C1917] rounded-full font-medium hover:bg-[#F5F0E8] transition-all shadow-[2px_2px_0_#1C1917]"
                 >
                   <RotateCcw className="w-4 h-4" />
                   Retake
                 </button>
                 <button
                   onClick={usePhoto}
-                  className="flex items-center gap-2 px-6 py-3 bg-accent text-accent-foreground rounded-lg hover:opacity-90 transition-all hover:scale-105 shadow-md"
+                  className="flex items-center gap-2 px-6 py-2.5 bg-[#1C1917] text-white border-2 border-[#1C1917] rounded-full font-medium hover:opacity-90 transition-all shadow-[3px_3px_0_#1C1917]"
                 >
                   <Check className="w-4 h-4" />
                   Use Photo
