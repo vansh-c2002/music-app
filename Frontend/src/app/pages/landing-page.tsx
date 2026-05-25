@@ -12,6 +12,7 @@ function FloatingNotes() {
     id: i,
     note: NOTES[i % NOTES.length],
     top: `${5 + (i * 5.8) % 85}%`,
+    startX: `${(i * 13.7) % 80}vw`,
     delay: `${(i * 0.7) % 6}s`,
     duration: `${6 + (i * 1.1) % 6}s`,
     size: `${14 + (i * 3) % 20}px`,
@@ -23,9 +24,10 @@ function FloatingNotes() {
       {notes.map((n) => (
         <div
           key={n.id}
-          className="absolute left-0 select-none"
+          className="absolute select-none"
           style={{
             top: n.top,
+            left: n.startX,
             fontSize: n.size,
             color: "#1C1917",
             opacity: n.opacity,
@@ -37,10 +39,10 @@ function FloatingNotes() {
       ))}
       <style>{`
         @keyframes floatRight {
-          0%   { transform: translateX(0)     rotate(0deg);  opacity: 0; }
-          10%  { opacity: var(--start-opacity, 0.35); }
-          80%  { opacity: var(--start-opacity, 0.35); }
-          100% { transform: translateX(110vw) rotate(20deg); opacity: 0; }
+          0%   { transform: translateX(0)      rotate(0deg);  opacity: 0; }
+          10%  { opacity: 0.35; }
+          80%  { opacity: 0.35; }
+          100% { transform: translateX(40vw) rotate(15deg); opacity: 0; }
         }
       `}</style>
     </div>
