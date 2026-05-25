@@ -12,7 +12,7 @@ function FloatingNotes() {
     id: i,
     note: NOTES[i % NOTES.length],
     top: `${(i * 4.7) % 90}%`,
-    startX: `${10 + (i * 4.3) % 85}vw`,
+    startX: `${10 + (i * 4.3) % 85}%`,
     delay: `${(i * 0.5) % 7}s`,
     duration: `${7 + (i * 1.3) % 6}s`,
     size: `${28 + (i * 3) % 20}px`,
@@ -39,8 +39,8 @@ function FloatingNotes() {
       ))}
       <style>{`
         @keyframes floatLeft {
-          0%   { transform: translateX(0);      }
-          100% { transform: translateX(-30vw);  }
+          0%   { transform: translateX(0); }
+          100% { transform: translateX(-200px); }
         }
       `}</style>
     </div>
