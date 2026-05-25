@@ -2,42 +2,42 @@
 
 :root {
   --font-size: 16px;
-  --background: #F5F5DC;
-  --foreground: #3E2723;
-  --card: #FFFFFF;
-  --card-foreground: #3E2723;
-  --popover: #FFFFFF;
-  --popover-foreground: #3E2723;
-  --primary: #3E2723;
-  --primary-foreground: #F5F5DC;
-  --secondary: #5D4037;
-  --secondary-foreground: #F5F5DC;
-  --muted: #D7CCC8;
-  --muted-foreground: #6D4C41;
-  --accent: #E8622A;
-  --accent-foreground: #FFFFFF;
+  --background: #ffffff;
+  --foreground: #1C1917;
+  --card: #ffffff;
+  --card-foreground: #1C1917;
+  --popover: #ffffff;
+  --popover-foreground: #1C1917;
+  --primary: #1C1917;
+  --primary-foreground: #ffffff;
+  --secondary: #F5F0E8;
+  --secondary-foreground: #1C1917;
+  --muted: #F5F0E8;
+  --muted-foreground: #1C1917/60;
+  --accent: #7FFFD4;
+  --accent-foreground: #1C1917;
   --destructive: #d4183d;
   --destructive-foreground: #ffffff;
-  --border: rgba(62, 39, 35, 0.1);
+  --border: rgba(28, 25, 23, 0.12);
   --input: transparent;
-  --input-background: #EFEBE9;
-  --switch-background: #BCAAA4;
+  --input-background: #F5F0E8;
+  --switch-background: #D4C9B0;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --ring: #E8622A;
+  --ring: #7FFFD4;
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
   --radius: 0.625rem;
-  --sidebar: #EFEBE9;
-  --sidebar-foreground: #3E2723;
-  --sidebar-primary: #3E2723;
-  --sidebar-primary-foreground: #F5F5DC;
-  --sidebar-accent: #D7CCC8;
-  --sidebar-accent-foreground: #3E2723;
-  --sidebar-border: rgba(62, 39, 35, 0.15);
+  --sidebar: #F5F0E8;
+  --sidebar-foreground: #1C1917;
+  --sidebar-primary: #1C1917;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #7FFFD4;
+  --sidebar-accent-foreground: #1C1917;
+  --sidebar-border: rgba(28, 25, 23, 0.12);
   --sidebar-ring: #7FFFD4;
 }
 
@@ -63,11 +63,6 @@
   --ring: oklch(0.439 0 0);
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
@@ -127,11 +122,6 @@
   body {
     @apply bg-background text-foreground;
   }
-
-  /**
-  * Default typography styles for HTML elements (h1-h4, p, label, button, input).
-  * These are in @layer base, so Tailwind utility classes (like text-sm, text-lg) automatically override them.
-  */
 
   html {
     font-size: var(--font-size);
