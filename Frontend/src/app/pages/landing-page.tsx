@@ -42,6 +42,7 @@ function FloatingNotes() {
             fontSize: "32px",
             opacity: 0.35,
             animation: `slideLeft ${item.duration} ${item.delay} infinite linear`,
+            animationFillMode: "backwards",
           }}
         >
           {item.note}
