@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router";
 import { Camera, Upload, FileEdit } from "lucide-react";
 import { CameraCapture } from "../components/camera-capture";
 import { setCapturedFile } from "../lib/camera-store";
+import { Navbar } from "../components/navbar";
 
 export function LandingPage() {
   const [showCamera, setShowCamera] = useState(false);
@@ -17,6 +18,7 @@ export function LandingPage() {
   return (
     <>
       <div className="relative bg-white">
+        <Navbar />
         {/* Graph paper background */}
         <div
           className="fixed inset-0 pointer-events-none opacity-30 z-0"
