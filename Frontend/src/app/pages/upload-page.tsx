@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Upload, FileMusic, AlertCircle, LogIn, Camera } from "lucide-react";
+import { Upload, FileMusic, AlertCircle, LogIn, Camera, GripVertical, ZoomIn, X } from "lucide-react";
 import { useNavigate } from "react-router";
 import { Navbar } from "../components/navbar";
 import { motion } from "motion/react";
@@ -20,8 +20,15 @@ export function UploadPage() {
   const [adCountdown, setAdCountdown] = useState(AD_DURATION);
   const [showTypePicker, setShowTypePicker] = useState(false);
   const [selectedType, setSelectedType] = useState<"classical" | "jazz" | null>(null);
+  const [showOrderReview, setShowOrderReview] = useState(false);
+  const [orderedFiles, setOrderedFiles] = useState<File[]>([]);
+  const [orderPreviewUrls, setOrderPreviewUrls] = useState<string[]>([]);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const pendingFile = useRef<File[]>([]);
   const pendingScoreType = useRef<"classical" | "jazz">("classical");
+  const fileDragIndex = useRef<number | null>(null);
   const navigate = useNavigate();
   const [showCamera, setShowCamera] = useState(false);
   const { currentUser, signInWithGoogle } = useAuth();
@@ -33,6 +40,13 @@ export function UploadPage() {
       handleFilesUpload([preloaded]);
     }
   }, []);
+
+  useEffect(() => {
+    if (!lightboxUrl) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") setLightboxUrl(null); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [lightboxUrl]);
 
   useEffect(() => {
     if (!showAd) return;
@@ -87,15 +101,87 @@ export function UploadPage() {
       setError(`"${tooBig.name}" exceeds the 10MB limit.`);
       return;
     }
-    const names = files.map((f) => f.name).join(", ");
+    if (files.length > 1) {
+      const previews = files.map((f) =>
+        f.type !== "application/pdf" ? URL.createObjectURL(f) : ""
+      );
+      setOrderedFiles([...files]);
+      setOrderPreviewUrls(previews);
+      setShowOrderReview(true);
+    } else {
+      setFileName(files[0].name);
+      pendingFile.current = files;
+      if (files[0].type !== "application/pdf") {
+        setPreviewUrl(URL.createObjectURL(files[0]));
+      } else {
+        setPreviewUrl(null);
+      }
+      setShowTypePicker(true);
+    }
+  };
+
+  const confirmOrder = () => {
+    const names = orderedFiles.map((f) => f.name).join(", ");
     setFileName(names);
-    pendingFile.current = files;
-    if (files[0].type !== "application/pdf") {
-      setPreviewUrl(URL.createObjectURL(files[0]));
+    pendingFile.current = orderedFiles;
+    const firstImgIdx = orderedFiles.findIndex((f) => f.type !== "application/pdf");
+    if (firstImgIdx !== -1) {
+      setPreviewUrl(orderPreviewUrls[firstImgIdx]);
+      orderPreviewUrls.forEach((url, i) => {
+        if (i !== firstImgIdx && url) URL.revokeObjectURL(url);
+      });
     } else {
       setPreviewUrl(null);
+      orderPreviewUrls.forEach((url) => url && URL.revokeObjectURL(url));
     }
+    setOrderPreviewUrls([]);
+    setOrderedFiles([]);
+    setShowOrderReview(false);
     setShowTypePicker(true);
+  };
+
+  const handleFileDragStart = (index: number) => {
+    fileDragIndex.current = index;
+    setDraggingIndex(index);
+  };
+
+  const getInsertPosition = (e: React.DragEvent, index: number) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    return e.clientY > rect.top + rect.height / 2 ? index + 1 : index;
+  };
+
+  const handleFileDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverIndex(getInsertPosition(e, index));
+  };
+
+  const handleFileDrop = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (fileDragIndex.current === null) { setDragOverIndex(null); setDraggingIndex(null); return; }
+    let insertAt = getInsertPosition(e, index);
+    const from = fileDragIndex.current;
+    if (from < insertAt) insertAt--;
+    if (from !== insertAt) {
+      const newFiles = [...orderedFiles];
+      const newPreviews = [...orderPreviewUrls];
+      const [movedFile] = newFiles.splice(from, 1);
+      const [movedPreview] = newPreviews.splice(from, 1);
+      newFiles.splice(insertAt, 0, movedFile);
+      newPreviews.splice(insertAt, 0, movedPreview);
+      setOrderedFiles(newFiles);
+      setOrderPreviewUrls(newPreviews);
+    }
+    fileDragIndex.current = null;
+    setDragOverIndex(null);
+    setDraggingIndex(null);
+  };
+
+  const handleFileDragEnd = () => {
+    fileDragIndex.current = null;
+    setDragOverIndex(null);
+    setDraggingIndex(null);
   };
 
   const runUpload = async (files: File[], scoreType: "classical" | "jazz") => {
@@ -111,7 +197,7 @@ export function UploadPage() {
     try {
       const apiUrl = import.meta.env.VITE_API_URL;
       if (!apiUrl) throw new Error("API URL not configured");
-      const idToken = await currentUser.getIdToken();
+      const idToken = currentUser ? await currentUser.getIdToken() : "";
       setStage("uploading");
       const response = await fetch(`${apiUrl}/transcribe-multi`, {
         method: "POST",
@@ -139,8 +225,14 @@ export function UploadPage() {
     setProcessing(false);
     setShowAd(false);
     setShowTypePicker(false);
+    setShowOrderReview(false);
     setSelectedType(null);
     setFileName("");
+    setOrderedFiles([]);
+    setOrderPreviewUrls((urls) => {
+      urls.forEach((url) => url && URL.revokeObjectURL(url));
+      return [];
+    });
     if (previewUrl) {
       URL.revokeObjectURL(previewUrl);
       setPreviewUrl(null);
@@ -206,7 +298,7 @@ export function UploadPage() {
               `}
             >
               {/* Staff lines inside upload zone — always visible in idle state */}
-              {!showTypePicker && !processing && !error && !showAd && (
+              {!showOrderReview && !showTypePicker && !processing && !error && !showAd && (
                 <div className="absolute left-16 right-16 top-1/2 -translate-y-1/2 h-32 opacity-40 pointer-events-none">
                   {[0, 1, 2, 3, 4].map((i) => (
                     <div
@@ -223,8 +315,76 @@ export function UploadPage() {
                 </div>
               )}
 
-              {/* Type picker */}
-              {showTypePicker ? (
+              {/* Order review */}
+              {showOrderReview ? (
+                <div className="relative z-10">
+                  <h2
+                    className="text-3xl font-serif font-bold mb-2 text-center"
+                    style={{ fontFamily: "DM Serif Display, Georgia, serif" }}
+                  >
+                    Confirm page order
+                  </h2>
+                  <p className="text-center text-[#1C1917]/60 text-sm mb-6">
+                    Drag to reorder · {orderedFiles.length} pages
+                  </p>
+                  <div className="mb-6 max-h-72 overflow-y-auto pr-1">
+                    <div className={`h-[3px] rounded-full mx-1 mb-1 bg-[#7FFFD4] transition-opacity duration-100 ${dragOverIndex === 0 ? "opacity-100" : "opacity-0"}`} />
+                    {orderedFiles.map((file, i) => (
+                      <div key={`${file.name}-${file.size}-${i}`}>
+                      <div
+                        draggable
+                        onDragStart={() => handleFileDragStart(i)}
+                        onDragOver={(e) => handleFileDragOver(e, i)}
+                        onDrop={(e) => handleFileDrop(e, i)}
+                        onDragEnd={handleFileDragEnd}
+                        className={`flex items-center gap-3 p-3 rounded-xl border-2 border-[#1C1917]/20 hover:border-[#1C1917]/40 transition-all cursor-grab active:cursor-grabbing bg-white select-none mb-1 ${draggingIndex === i ? "opacity-40" : ""}`}
+                      >
+                        <GripVertical className="w-5 h-5 text-[#1C1917]/30 flex-shrink-0" />
+                        <span className="w-6 h-6 rounded-full bg-[#F5F0E8] border border-[#1C1917]/20 flex items-center justify-center text-xs font-bold text-[#1C1917]/60 flex-shrink-0">
+                          {i + 1}
+                        </span>
+                        {orderPreviewUrls[i] ? (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setLightboxUrl(orderPreviewUrls[i]); }}
+                            className="relative group flex-shrink-0 cursor-zoom-in"
+                            draggable={false}
+                          >
+                            <img
+                              src={orderPreviewUrls[i]}
+                              alt={`Page ${i + 1}`}
+                              className="w-10 h-14 object-cover rounded border border-[#1C1917]/10"
+                            />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 rounded transition-all flex items-center justify-center">
+                              <ZoomIn className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </div>
+                          </button>
+                        ) : (
+                          <div className="w-10 h-14 bg-[#F5F0E8] rounded border border-[#1C1917]/10 flex items-center justify-center flex-shrink-0">
+                            <FileMusic className="w-4 h-4 text-[#1C1917]/30" />
+                          </div>
+                        )}
+                        <span className="text-sm text-[#1C1917] truncate flex-1">{file.name}</span>
+                      </div>
+                      <div className={`h-[3px] rounded-full mx-1 mb-1 bg-[#7FFFD4] transition-opacity duration-100 ${dragOverIndex === i + 1 ? "opacity-100" : "opacity-0"}`} />
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    onClick={confirmOrder}
+                    className="w-full py-3 bg-[#7FFFD4] border-2 border-[#1C1917] rounded-full font-medium hover:translate-y-[-2px] transition-all shadow-[4px_4px_0_#1C1917] hover:shadow-[6px_6px_0_#1C1917]"
+                  >
+                    Continue →
+                  </button>
+                  <button
+                    onClick={handleReset}
+                    className="mt-4 block mx-auto text-sm text-[#1C1917]/50 hover:text-[#1C1917] transition-colors"
+                  >
+                    ← Choose different files
+                  </button>
+                </div>
+
+              ) : /* Type picker */
+              showTypePicker ? (
                 <div className="relative z-10">
                   <h2
                     className="text-3xl font-serif font-bold mb-2 text-center"
@@ -507,7 +667,7 @@ export function UploadPage() {
                     </label>
                     <button
                       onClick={() => setShowCamera(true)}
-                      className="px-8 py-3 bg-white border-2 border-[#1C1917] rounded-full font-medium hover:translate-y-[-2px] transition-all shadow-[4px_4px_0_#1C1917] hover:shadow-[6px_6px_0_#1C1917] inline-flex items-center gap-2"
+                      className="px-8 py-3 bg-white border-2 border-[#1C1917] rounded-full font-medium hover:translate-y-[-2px] transition-all shadow-[4px_4px_0_#1C1917] hover:shadow-[6px_6px_0_#1C1906] inline-flex items-center gap-2"
                     >
                       <Camera className="w-5 h-5" />
                       Use Camera
@@ -576,6 +736,26 @@ export function UploadPage() {
           }}
           onClose={() => setShowCamera(false)}
         />
+      )}
+
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <button
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+            onClick={() => setLightboxUrl(null)}
+          >
+            <X className="w-5 h-5 text-white" />
+          </button>
+          <img
+            src={lightboxUrl}
+            alt="Page preview"
+            className="max-w-full max-h-full object-contain rounded-xl shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
       )}
     </>
   );

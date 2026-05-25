@@ -42,9 +42,9 @@ export function Navbar() {
         <Link
           to="/"
           className="text-2xl font-bold text-[#1C1917] hover:opacity-80 transition-opacity"
-          style={{ fontFamily: "DM Serif Display, Georgia, serif" }}
+          style={{ fontFamily: "OhSheetMark, DM Serif Display, Georgia, serif" }}
         >
-          Oh Sheet!
+          Oh Sheet<span style={{ fontSize: "0.8em", marginLeft: "0.2em" }}>!</span>
         </Link>
 
         {/* Nav links */}
