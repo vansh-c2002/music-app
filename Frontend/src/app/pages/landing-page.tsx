@@ -15,7 +15,7 @@ function FloatingNotes() {
     startX: `${(i * 13.7) % 80}vw`,
     delay: `${(i * 0.7) % 6}s`,
     duration: `${6 + (i * 1.1) % 6}s`,
-    size: `${14 + (i * 3) % 20}px`,
+    size: `${28 + (i * 3) % 20}px`,
     opacity: 0.32 + (i % 4) * 0.06,
   }));
 
@@ -31,18 +31,18 @@ function FloatingNotes() {
             fontSize: n.size,
             color: "#1C1917",
             opacity: n.opacity,
-            animation: `floatRight ${n.duration} ${n.delay} infinite ease-in`,
+            animation: `floatLeft ${n.duration} ${n.delay} infinite ease-in`,
           }}
         >
           {n.note}
         </div>
       ))}
       <style>{`
-        @keyframes floatRight {
-          0%   { transform: translateX(0)      rotate(0deg);  opacity: 0; }
+        @keyframes floatLeft {
+          0%   { transform: translateX(0)       rotate(0deg);   opacity: 0; }
           10%  { opacity: 0.35; }
           80%  { opacity: 0.35; }
-          100% { transform: translateX(40vw) rotate(15deg); opacity: 0; }
+          100% { transform: translateX(-40vw)   rotate(-15deg); opacity: 0; }
         }
       `}</style>
     </div>
@@ -383,8 +383,8 @@ export function LandingPage() {
           @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&display=swap');
 
           @keyframes marquee {
-            0% { transform: translateX(0); }
-            100% { transform: translateX(-50%); }
+            0% { transform: translateX(-50%); }
+            100% { transform: translateX(0); }
           }
 
           .animate-marquee {
