@@ -102,7 +102,7 @@ export function LibraryPage() {
 
       {/* Graph paper background */}
       <div
-        className="fixed inset-0 pointer-events-none opacity-30 z-0"
+        className="fixed inset-0 pointer-events-none opacity-60 z-0"
         style={{
           backgroundImage: `
             linear-gradient(rgba(28, 25, 23, 0.05) 1px, transparent 1px),
