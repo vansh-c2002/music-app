@@ -98,11 +98,11 @@ export function LandingPage() {
                 <h1
                   className="text-8xl font-serif font-bold mb-6 tracking-tight leading-[0.95]"
                   style={{
-                    fontFamily: "DM Serif Display, Georgia, serif",
+                    fontFamily: "OhSheetMark, DM Serif Display, Georgia, serif",
                     letterSpacing: "-0.03em",
                   }}
                 >
-                  Oh <span className="italic">Sheet!</span>
+                  Oh <span className="italic">Sheet<span style={{ fontSize: "0.8em", marginLeft: "0.2em" }}>!</span></span>
                 </h1>
 
                 <p className="text-xl text-[#1C1917]/80 mb-3 leading-relaxed">
@@ -384,7 +384,7 @@ export function LandingPage() {
         {/* Footer */}
         <footer className="bg-white border-t border-[#1C1917]/10 py-8 px-6 relative z-10">
           <div className="max-w-7xl mx-auto text-center text-sm text-[#1C1917]/60">
-            <p>© 2026 Oh Sheet! — Stop copying notes. Start making music.</p>
+            <p style={{ fontFamily: "OhSheetMark, DM Serif Display, Georgia, serif" }}>© 2026 Oh Sheet<span style={{ fontSize: "0.8em", marginLeft: "0.2em" }}>!</span> — Stop copying notes. Start making music.</p>
           </div>
         </footer>
 

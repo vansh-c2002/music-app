@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { ArrowLeft, Download, RotateCcw, RotateCw, ChevronLeft, ChevronRight, BookmarkPlus, Loader2 } from "lucide-react";
+import { ArrowLeft, Download, RotateCcw, RotateCw, ChevronLeft, ChevronRight, BookmarkPlus, Loader2, Play, Pause, Square } from "lucide-react";
+import { ScorePlayer } from "../lib/play-score";
 import { Link, useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { SheetMusicCanvas } from "../components/sheet-music-canvas";
@@ -36,6 +37,8 @@ export function EditorPage() {
     (location.state as { musicXml: string; fileName: string }) ?? {};
   const { currentUser } = useAuth();
   const canvasRef = useRef<SheetMusicCanvasHandle>(null);
+  const playerRef = useRef<ScorePlayer | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState<string | null>(null);
 
@@ -65,6 +68,19 @@ export function EditorPage() {
     }
     setHistory([initialXml]);
     setHistIdx(0);
+  }, []);
+
+  useEffect(() => {
+    if (!currentXml) return;
+    if (!playerRef.current) playerRef.current = new ScorePlayer();
+    const player = playerRef.current;
+    player.load(currentXml);
+    player.onEnd = () => setIsPlaying(false);
+    setIsPlaying(false);
+  }, [currentXml]);
+
+  useEffect(() => {
+    return () => { playerRef.current?.dispose(); };
   }, []);
 
   const moveNext = useCallback(() => {
@@ -143,6 +159,23 @@ export function EditorPage() {
   const handlePitchCommit = useCallback((note: ParsedNote, step: string, octave: number) => {
     pushXml(updateNotePitch(currentXml, note.measure, note.xmlIndex, step, octave, note.alter));
   }, [currentXml, histIdx]);
+
+  const handlePlayPause = async () => {
+    const player = playerRef.current;
+    if (!player) return;
+    if (isPlaying) {
+      player.pause();
+      setIsPlaying(false);
+    } else {
+      await player.play();
+      setIsPlaying(true);
+    }
+  };
+
+  const handleStop = () => {
+    playerRef.current?.stop();
+    setIsPlaying(false);
+  };
 
   const handleTranspose = (semitones: number) => {
     pushXml(transposeScore(currentXml, semitones));
@@ -238,7 +271,24 @@ export function EditorPage() {
             <RotateCw className="w-4 h-4 text-[#1C1917]" />
           </button>
 
-          {/* Save */}
+          <div className="w-px h-6 bg-border mx-1" />
+
+          <button
+            onClick={handlePlayPause}
+            className="p-2 rounded-lg bg-muted hover:bg-muted/80 transition-colors"
+            title={isPlaying ? "Pause" : "Play"}
+          >
+            {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+          </button>
+          <button
+            onClick={handleStop}
+            disabled={!isPlaying}
+            className="p-2 rounded-lg bg-muted hover:bg-muted/80 disabled:opacity-40 transition-colors"
+            title="Stop"
+          >
+            <Square className="w-4 h-4" />
+          </button>
+
           {currentUser && (
             <button
               onClick={handleSaveToLibrary}
