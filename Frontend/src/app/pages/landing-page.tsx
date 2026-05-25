@@ -69,7 +69,7 @@ export function LandingPage() {
 
   return (
     <>
-      <div className="relative bg-white">
+      <div className="relative bg-white overflow-x-hidden">
         <Navbar />
         {/* Graph paper background */}
         <div
