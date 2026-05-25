@@ -115,7 +115,7 @@ export function LandingPage() {
             <span className="mx-6">EXPORT TO PDF ♪</span>
             <span className="mx-6">NO MORE RETYPING ♪</span>
             <span className="mx-6">OH SHEET! ♪</span>
-            <span className="mx-6">CONSERVATORY APPROVED ♪</span>
+            <span className="mx-6">FREE TO TRY ♪</span>
             <span className="mx-6">CLASSICAL + JAZZ ♪</span>
             <span className="mx-6">SCAN YOUR SCORE ♪</span>
             <span className="mx-6">EDIT IN SECONDS ♪</span>
@@ -123,7 +123,7 @@ export function LandingPage() {
             <span className="mx-6">EXPORT TO PDF ♪</span>
             <span className="mx-6">NO MORE RETYPING ♪</span>
             <span className="mx-6">OH SHEET! ♪</span>
-            <span className="mx-6">CONSERVATORY APPROVED ♪</span>
+            <span className="mx-6">FREE TO TRY ♪</span>
             <span className="mx-6">CLASSICAL + JAZZ ♪</span>
           </div>
         </div>
