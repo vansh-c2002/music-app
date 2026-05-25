@@ -32,7 +32,7 @@ export function LandingPage() {
         />
 
         {/* Hero Section */}
-        <section className="relative py-20 px-6 pt-32">
+        <section className="relative py-20 px-6 pt-40">
           <div className="max-w-7xl mx-auto">
             <div className="grid lg:grid-cols-2 gap-12 items-center">
               {/* Left side - Text */}
