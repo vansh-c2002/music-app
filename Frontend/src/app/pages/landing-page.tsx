@@ -5,6 +5,48 @@ import { CameraCapture } from "../components/camera-capture";
 import { setCapturedFile } from "../lib/camera-store";
 import { Navbar } from "../components/navbar";
 
+const NOTES = ["♩", "♪", "♫", "♬"];
+
+function FloatingNotes() {
+  const notes = Array.from({ length: 16 }, (_, i) => ({
+    id: i,
+    note: NOTES[i % NOTES.length],
+    left: `${5 + (i * 6.2) % 90}%`,
+    delay: `${(i * 0.7) % 6}s`,
+    duration: `${6 + (i * 1.1) % 6}s`,
+    size: `${14 + (i * 3) % 20}px`,
+    opacity: 0.12 + (i % 4) * 0.06,
+  }));
+
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      {notes.map((n) => (
+        <div
+          key={n.id}
+          className="absolute bottom-0 select-none"
+          style={{
+            left: n.left,
+            fontSize: n.size,
+            color: "#1C1917",
+            opacity: n.opacity,
+            animation: `floatUp ${n.duration} ${n.delay} infinite ease-in`,
+          }}
+        >
+          {n.note}
+        </div>
+      ))}
+      <style>{`
+        @keyframes floatUp {
+          0%   { transform: translateY(0)   rotate(0deg);   opacity: var(--start-opacity, 0.15); }
+          20%  { opacity: var(--start-opacity, 0.15); }
+          80%  { opacity: var(--start-opacity, 0.15); }
+          100% { transform: translateY(-700px) rotate(20deg); opacity: 0; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 export function LandingPage() {
   const [showCamera, setShowCamera] = useState(false);
   const navigate = useNavigate();
@@ -33,6 +75,7 @@ export function LandingPage() {
 
         {/* Hero Section */}
         <section className="relative py-20 px-6 pt-40">
+          <FloatingNotes />
           <div className="max-w-7xl mx-auto">
             <div className="grid lg:grid-cols-2 gap-12 items-center">
               {/* Left side - Text */}
