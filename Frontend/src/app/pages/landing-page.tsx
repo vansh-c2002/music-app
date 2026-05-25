@@ -8,13 +8,13 @@ import { Navbar } from "../components/navbar";
 const NOTES = ["♩", "♪", "♫", "♬"];
 
 function FloatingNotes() {
-  const notes = Array.from({ length: 16 }, (_, i) => ({
+  const notes = Array.from({ length: 20 }, (_, i) => ({
     id: i,
     note: NOTES[i % NOTES.length],
-    top: `${5 + (i * 5.8) % 85}%`,
-    startX: `${(i * 13.7) % 80}vw`,
-    delay: `${(i * 0.7) % 6}s`,
-    duration: `${6 + (i * 1.1) % 6}s`,
+    top: `${(i * 4.7) % 90}%`,
+    startX: `${10 + (i * 4.3) % 85}vw`,
+    delay: `${(i * 0.5) % 7}s`,
+    duration: `${7 + (i * 1.3) % 6}s`,
     size: `${28 + (i * 3) % 20}px`,
     opacity: 0.32 + (i % 4) * 0.06,
   }));
@@ -31,7 +31,7 @@ function FloatingNotes() {
             fontSize: n.size,
             color: "#1C1917",
             opacity: n.opacity,
-            animation: `floatLeft ${n.duration} ${n.delay} infinite ease-in`,
+            animation: `floatLeft ${n.duration} ${n.delay} infinite linear`,
           }}
         >
           {n.note}
@@ -39,10 +39,8 @@ function FloatingNotes() {
       ))}
       <style>{`
         @keyframes floatLeft {
-          0%   { transform: translateX(0)       rotate(0deg);   opacity: 0; }
-          10%  { opacity: 0.35; }
-          80%  { opacity: 0.35; }
-          100% { transform: translateX(-40vw)   rotate(-15deg); opacity: 0; }
+          0%   { transform: translateX(0);      }
+          100% { transform: translateX(-30vw);  }
         }
       `}</style>
     </div>
