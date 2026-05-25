@@ -8,39 +8,49 @@ import { Navbar } from "../components/navbar";
 const NOTES = ["♩", "♪", "♫", "♬"];
 
 function FloatingNotes() {
-  const notes = Array.from({ length: 20 }, (_, i) => ({
-    id: i,
-    note: NOTES[i % NOTES.length],
-    top: `${(i * 4.7) % 90}%`,
-    startX: `${10 + (i * 4.3) % 85}%`,
-    delay: `${(i * 0.5) % 7}s`,
-    duration: `${7 + (i * 1.3) % 6}s`,
-    size: `${28 + (i * 3) % 20}px`,
-    opacity: 0.32 + (i % 4) * 0.06,
-  }));
+  const items = [
+    { note: "♩", top: "8%",  duration: "8s",  delay: "0s"   },
+    { note: "♪", top: "18%", duration: "11s", delay: "1.5s" },
+    { note: "♫", top: "28%", duration: "9s",  delay: "3s"   },
+    { note: "♬", top: "38%", duration: "12s", delay: "0.5s" },
+    { note: "♩", top: "48%", duration: "10s", delay: "2s"   },
+    { note: "♪", top: "58%", duration: "8s",  delay: "4s"   },
+    { note: "♫", top: "68%", duration: "11s", delay: "1s"   },
+    { note: "♬", top: "78%", duration: "9s",  delay: "3.5s" },
+    { note: "♩", top: "88%", duration: "12s", delay: "2.5s" },
+    { note: "♪", top: "13%", duration: "10s", delay: "5s"   },
+    { note: "♫", top: "33%", duration: "8s",  delay: "6s"   },
+    { note: "♬", top: "53%", duration: "11s", delay: "4.5s" },
+    { note: "♩", top: "73%", duration: "9s",  delay: "7s"   },
+    { note: "♪", top: "23%", duration: "12s", delay: "0.8s" },
+    { note: "♫", top: "43%", duration: "10s", delay: "5.5s" },
+    { note: "♬", top: "63%", duration: "8s",  delay: "2.2s" },
+    { note: "♩", top: "83%", duration: "11s", delay: "6.5s" },
+    { note: "♪", top: "5%",  duration: "9s",  delay: "3.8s" },
+    { note: "♫", top: "95%", duration: "12s", delay: "1.2s" },
+    { note: "♬", top: "50%", duration: "10s", delay: "7.5s" },
+  ];
 
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      {notes.map((n) => (
+      {items.map((item, i) => (
         <div
-          key={n.id}
-          className="absolute select-none"
+          key={i}
+          className="absolute select-none text-[#1C1917]"
           style={{
-            top: n.top,
-            left: n.startX,
-            fontSize: n.size,
-            color: "#1C1917",
-            opacity: n.opacity,
-            animation: `floatLeft ${n.duration} ${n.delay} infinite linear`,
+            top: item.top,
+            fontSize: "32px",
+            opacity: 0.35,
+            animation: `slideLeft ${item.duration} ${item.delay} infinite linear`,
           }}
         >
-          {n.note}
+          {item.note}
         </div>
       ))}
       <style>{`
-        @keyframes floatLeft {
-          0%   { transform: translateX(0); }
-          100% { transform: translateX(-200px); }
+        @keyframes slideLeft {
+          from { transform: translateX(100vw); }
+          to   { transform: translateX(-100px); }
         }
       `}</style>
     </div>
