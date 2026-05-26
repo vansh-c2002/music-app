@@ -1,12 +1,16 @@
-import * as Tone from "tone";
-
 interface PlayNote {
-  noteName: string;
+  frequency: number;
   startSec: number;
   durationSec: number;
 }
 
-function parseForPlayback(xml: string): { notes: PlayNote[]; bpm: number } {
+function noteToFrequency(step: string, octave: number, alter: number): number {
+  const semitones: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  const midi = (octave + 1) * 12 + (semitones[step] ?? 0) + Math.round(alter);
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+function parseForPlayback(xml: string): { notes: PlayNote[]; totalDuration: number } {
   const doc = new DOMParser().parseFromString(xml, "application/xml");
 
   let bpm = 120;
@@ -34,7 +38,6 @@ function parseForPlayback(xml: string): { notes: PlayNote[]; bpm: number } {
 
       for (const child of Array.from(measure.childNodes) as Element[]) {
         const tag = child.nodeName;
-
         if (tag === "note") {
           const isChord = child.getElementsByTagName("chord").length > 0;
           const isRest = child.getElementsByTagName("rest").length > 0;
@@ -48,18 +51,12 @@ function parseForPlayback(xml: string): { notes: PlayNote[]; bpm: number } {
             const pitchEl = child.getElementsByTagName("pitch")[0];
             if (pitchEl) {
               const step = pitchEl.getElementsByTagName("step")[0]?.textContent?.trim() ?? "C";
-              const octave = parseInt(
-                pitchEl.getElementsByTagName("octave")[0]?.textContent ?? "4",
-                10
-              );
-              const alter = parseFloat(
-                pitchEl.getElementsByTagName("alter")[0]?.textContent ?? "0"
-              );
-              const acc = alter >= 1 ? "#" : alter <= -1 ? "b" : "";
+              const octave = parseInt(pitchEl.getElementsByTagName("octave")[0]?.textContent ?? "4", 10);
+              const alter = parseFloat(pitchEl.getElementsByTagName("alter")[0]?.textContent ?? "0");
               notes.push({
-                noteName: `${step}${acc}${octave}`,
+                frequency: noteToFrequency(step, octave, alter),
                 startSec,
-                durationSec: durSec * 0.92,
+                durationSec: durSec * 0.9,
               });
             }
           }
@@ -74,99 +71,103 @@ function parseForPlayback(xml: string): { notes: PlayNote[]; bpm: number } {
           if (d) cursor -= (parseInt(d.textContent!, 10) / divisions) * secPerBeat;
         } else if (tag === "forward") {
           const d = child.getElementsByTagName("duration")[0];
-          if (d) {
-            cursor += (parseInt(d.textContent!, 10) / divisions) * secPerBeat;
-            measureEnd = Math.max(measureEnd, cursor);
-          }
+          if (d) { cursor += (parseInt(d.textContent!, 10) / divisions) * secPerBeat; measureEnd = Math.max(measureEnd, cursor); }
         }
       }
-
       measureStartSec = measureEnd;
     }
   }
 
-  return { notes, bpm };
+  const totalDuration = notes.reduce((m, n) => Math.max(m, n.startSec + n.durationSec), 0);
+  return { notes, totalDuration };
 }
 
 export class ScorePlayer {
-  private synth: Tone.PolySynth | null = null;
-  private part: Tone.Part | null = null;
-  private endEventId: number | null = null;
-  private _isPlaying = false;
+  private ctx: AudioContext | null = null;
+  private notes: PlayNote[] = [];
+  private totalDuration = 0;
+  private pauseOffset = 0;
+  private startedAt = 0;
+  private playing = false;
+  private nodes: { osc: OscillatorNode; gain: GainNode }[] = [];
+  private endTimer: ReturnType<typeof setTimeout> | null = null;
   onEnd: (() => void) | null = null;
 
   load(xml: string) {
-    this._cleanup();
-
-    const { notes, bpm } = parseForPlayback(xml);
-    if (notes.length === 0) return;
-
-    Tone.getTransport().bpm.value = bpm;
-
-    this.synth = new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: "triangle" },
-      envelope: { attack: 0.02, decay: 0.1, sustain: 0.5, release: 0.5 },
-      volume: -8,
-    }).toDestination();
-
-    const events = notes.map((n) => ({ time: n.startSec, ...n }));
-    this.part = new Tone.Part<PlayNote & { time: number }>((time, val) => {
-      this.synth?.triggerAttackRelease(val.noteName, val.durationSec, time);
-    }, events);
-    this.part.start(0);
-
-    const totalDuration = Math.max(...notes.map((n) => n.startSec + n.durationSec));
-    this.endEventId = Tone.getTransport().scheduleOnce(() => {
-      setTimeout(() => {
-        this._isPlaying = false;
-        Tone.getTransport().stop();
-        (Tone.getTransport() as any).position = 0;
-        this.onEnd?.();
-      }, 0);
-    }, totalDuration + 0.3);
-
-    Tone.getTransport().stop();
-    (Tone.getTransport() as any).position = 0;
+    this.stop();
+    const { notes, totalDuration } = parseForPlayback(xml);
+    this.notes = notes;
+    this.totalDuration = totalDuration;
+    this.pauseOffset = 0;
   }
 
   async play() {
-    await Tone.start();
-    if (this._isPlaying) return;
-    Tone.getTransport().start();
-    this._isPlaying = true;
+    if (this.playing) return;
+    if (!this.ctx) this.ctx = new AudioContext();
+    await this.ctx.resume();
+
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    this.startedAt = now - this.pauseOffset;
+    this.playing = true;
+    this.nodes = [];
+
+    for (const note of this.notes) {
+      if (note.startSec < this.pauseOffset - 0.05) continue;
+      const start = now + (note.startSec - this.pauseOffset);
+      if (start < now - 0.01) continue;
+
+      const gain = ctx.createGain();
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.15, start + 0.015);
+      gain.gain.setValueAtTime(0.15, start + note.durationSec - 0.04);
+      gain.gain.linearRampToValueAtTime(0, start + note.durationSec);
+
+      const osc = ctx.createOscillator();
+      osc.type = "triangle";
+      osc.frequency.value = note.frequency;
+      osc.connect(gain);
+      osc.start(start);
+      osc.stop(start + note.durationSec + 0.05);
+
+      this.nodes.push({ osc, gain });
+    }
+
+    const remaining = (this.totalDuration - this.pauseOffset) * 1000 + 300;
+    this.endTimer = setTimeout(() => {
+      if (this.playing) {
+        this.playing = false;
+        this.pauseOffset = 0;
+        this.onEnd?.();
+      }
+    }, remaining);
   }
 
   pause() {
-    if (!this._isPlaying) return;
-    Tone.getTransport().pause();
-    this.synth?.releaseAll();
-    this._isPlaying = false;
+    if (!this.playing || !this.ctx) return;
+    this.pauseOffset = this.ctx.currentTime - this.startedAt;
+    this.playing = false;
+    this._cancelNodes();
   }
 
   stop() {
-    Tone.getTransport().stop();
-    (Tone.getTransport() as any).position = 0;
-    this.synth?.releaseAll();
-    this._isPlaying = false;
+    this.playing = false;
+    this.pauseOffset = 0;
+    this._cancelNodes();
   }
 
-  get isPlaying() {
-    return this._isPlaying;
-  }
-
-  private _cleanup() {
-    if (this.endEventId !== null) {
-      Tone.getTransport().clear(this.endEventId);
-      this.endEventId = null;
+  private _cancelNodes() {
+    if (this.endTimer !== null) { clearTimeout(this.endTimer); this.endTimer = null; }
+    for (const { osc, gain } of this.nodes) {
+      try { gain.gain.cancelScheduledValues(0); gain.gain.setValueAtTime(0, 0); osc.stop(); } catch {}
     }
-    this.part?.dispose();
-    this.part = null;
-    this.synth?.dispose();
-    this.synth = null;
-    this.stop();
+    this.nodes = [];
   }
 
   dispose() {
-    this._cleanup();
+    this.stop();
+    this.ctx?.close();
+    this.ctx = null;
   }
 }
