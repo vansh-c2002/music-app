@@ -289,6 +289,45 @@ def _kern_to_musicxml(full_kern: str) -> str:
             os.unlink(xml_path)
 
 
+def _merge_musicxml(xml_list: list[str]) -> str:
+    """Merge multiple single-page MusicXML scores (one per HOMR page) into one."""
+    if len(xml_list) == 1:
+        return xml_list[0]
+
+    from music21 import converter, stream
+    import copy
+
+    def _parse_xml(xml_str: str):
+        with tempfile.NamedTemporaryFile(suffix=".musicxml", mode="w", delete=False, encoding="utf-8") as f:
+            f.write(xml_str)
+            path = f.name
+        try:
+            return converter.parse(path)
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
+
+    combined = _parse_xml(xml_list[0])
+    combined_parts = list(combined.parts)
+    page_offset = combined.duration.quarterLength
+
+    for xml_str in xml_list[1:]:
+        page_score = _parse_xml(xml_str)
+        for part_idx, part in enumerate(page_score.parts):
+            if part_idx < len(combined_parts):
+                for m in part.getElementsByClass("Measure"):
+                    combined_parts[part_idx].insert(page_offset + m.offset, copy.deepcopy(m))
+        page_offset += page_score.duration.quarterLength
+
+    xml_out = tempfile.mktemp(suffix=".musicxml")
+    try:
+        combined.write("musicxml", fp=xml_out)
+        return open(xml_out, encoding="utf-8").read()
+    finally:
+        if os.path.exists(xml_out):
+            os.unlink(xml_out)
+
+
 @web_app.post("/transcribe-multi")
 async def transcribe_multi(
     files: list[UploadFile] = File(...),
@@ -346,7 +385,7 @@ async def transcribe_multi(
                         detail=f"homr produced no output for page {i+1}",
                     )
                 all_xml.append(xml_files[0].read_text(encoding="utf-8"))
-        xml_content = all_xml[0]
+        xml_content = _merge_musicxml(all_xml)
 
     return Response(
         content=xml_content,

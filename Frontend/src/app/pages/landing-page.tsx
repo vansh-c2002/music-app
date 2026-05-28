@@ -85,18 +85,18 @@ export function LandingPage() {
         />
 
         {/* Hero Section */}
-        <section className="relative py-20 px-6 pt-40 overflow-hidden">
+        <section className="relative py-16 px-6 pt-32 sm:pt-40 overflow-hidden">
           <FloatingNotes />
           <div className="max-w-7xl mx-auto">
-            <div className="grid lg:grid-cols-2 gap-12 items-center">
+            <div className="grid lg:grid-cols-2 gap-10 lg:gap-12 items-center">
               {/* Left side - Text */}
               <div className="relative z-10">
-                <div className="inline-block px-4 py-2 bg-[#F0FAF4] border border-[#1C1917]/10 rounded-full text-sm font-medium mb-6">
+                <div className="inline-block px-4 py-2 bg-[#F0FAF4] border border-[#1C1917]/10 rounded-full text-sm font-medium mb-5">
                   PHOTO → SCORE, INSTANTLY
                 </div>
 
                 <h1
-                  className="text-8xl font-serif font-bold mb-6 tracking-tight leading-[0.95]"
+                  className="text-5xl sm:text-7xl lg:text-8xl font-serif font-bold mb-5 tracking-tight leading-[0.95]"
                   style={{
                     fontFamily: "OhSheetMark, DM Serif Display, Georgia, serif",
                     letterSpacing: "-0.03em",
@@ -105,22 +105,22 @@ export function LandingPage() {
                   Oh <span className="italic">Sheet<span style={{ fontSize: "0.8em", marginLeft: "0.2em" }}>!</span></span>
                 </h1>
 
-                <p className="text-xl text-[#1C1917]/80 mb-3 leading-relaxed">
+                <p className="text-base sm:text-xl text-[#1C1917]/80 mb-3 leading-relaxed">
                   Turn any sheet music into an editable digital score —
                   instantly. Photograph, upload, and export to MuseScore, PDF,
                   and more.
                 </p>
 
-                <div className="flex flex-wrap gap-4 mt-6">
+                <div className="flex flex-wrap gap-3 mt-6">
                   <Link
                     to="/upload"
-                    className="inline-block px-8 py-4 bg-[#1C1917] text-white border-2 border-[#1C1917] rounded-full text-lg font-medium hover:translate-y-[-2px] transition-all shadow-[4px_4px_0_#1C1917] hover:shadow-[6px_6px_0_#1C1917]"
+                    className="inline-block px-6 sm:px-8 py-3 sm:py-4 bg-[#1C1917] text-white border-2 border-[#1C1917] rounded-full text-base sm:text-lg font-medium hover:translate-y-[-2px] transition-all shadow-[4px_4px_0_#1C1917] hover:shadow-[6px_6px_0_#1C1917]"
                   >
                     Scan Your First Score →
                   </Link>
                   <button
                     onClick={() => setShowCamera(true)}
-                    className="inline-flex items-center gap-2 px-8 py-4 bg-white border-2 border-[#1C1917] rounded-full text-lg font-medium hover:translate-y-[-2px] transition-all shadow-[4px_4px_0_#1C1917] hover:shadow-[6px_6px_0_#1C1917]"
+                    className="inline-flex items-center gap-2 px-6 sm:px-8 py-3 sm:py-4 bg-white border-2 border-[#1C1917] rounded-full text-base sm:text-lg font-medium hover:translate-y-[-2px] transition-all shadow-[4px_4px_0_#1C1917] hover:shadow-[6px_6px_0_#1C1917]"
                   >
                     <Camera className="w-5 h-5" />
                     Take a Photo
@@ -128,32 +128,28 @@ export function LandingPage() {
                 </div>
               </div>
 
-              {/* Right side - Before/After */}
-              <div className="relative z-10 grid grid-cols-2 gap-6">
+              {/* Right side - Before/After (hidden on small mobile to avoid clutter) */}
+              <div className="relative z-10 hidden sm:grid grid-cols-2 gap-4 sm:gap-6">
                 {/* Before */}
-                <div className="bg-[#F5F0E8] p-8 rounded-2xl border-2 border-[#1C1917] shadow-[6px_6px_0_#1C1917]">
-                  <div className="text-xs font-medium text-[#1C1917]/60 mb-4">
-                    photo
-                  </div>
+                <div className="bg-[#F5F0E8] p-6 sm:p-8 rounded-2xl border-2 border-[#1C1917] shadow-[6px_6px_0_#1C1917]">
+                  <div className="text-xs font-medium text-[#1C1917]/60 mb-4">photo</div>
                   <div className="space-y-2 mb-6">
                     {[0, 1, 2, 3, 4].map((i) => (
                       <div key={i} className="h-0.5 bg-[#1C1917]/40" />
                     ))}
                   </div>
-                  <div className="text-5xl">♪ ♫ ♬</div>
+                  <div className="text-4xl sm:text-5xl">♪ ♫ ♬</div>
                 </div>
 
                 {/* After */}
-                <div className="bg-white p-8 rounded-2xl border-2 border-[#1C1917] shadow-[6px_6px_0_#1C1917] translate-y-8">
-                  <div className="text-xs font-medium text-[#1C1917]/60 mb-4">
-                    digital score
-                  </div>
+                <div className="bg-white p-6 sm:p-8 rounded-2xl border-2 border-[#1C1917] shadow-[6px_6px_0_#1C1917] translate-y-6 sm:translate-y-8">
+                  <div className="text-xs font-medium text-[#1C1917]/60 mb-4">digital score</div>
                   <div className="space-y-2 mb-6">
                     {[0, 1, 2, 3, 4].map((i) => (
                       <div key={i} className="h-0.5 bg-[#1C1917]" />
                     ))}
                   </div>
-                  <div className="text-5xl">♪ ♫ ♬</div>
+                  <div className="text-4xl sm:text-5xl">♪ ♫ ♬</div>
                 </div>
               </div>
             </div>
@@ -205,7 +201,7 @@ export function LandingPage() {
                 SIMPLE AS A CHORD
               </div>
               <h2
-                className="text-7xl font-serif font-bold tracking-tight leading-tight"
+                className="text-4xl sm:text-5xl lg:text-7xl font-serif font-bold tracking-tight leading-tight"
                 style={{
                   fontFamily: "DM Serif Display, Georgia, serif",
                   letterSpacing: "-0.03em",
@@ -217,7 +213,7 @@ export function LandingPage() {
               </h2>
             </div>
 
-            <div className="grid md:grid-cols-3 gap-8 mt-16">
+            <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-6 sm:gap-8 mt-10 sm:mt-16">
               {[
                 {
                   num: "01",
@@ -291,7 +287,7 @@ export function LandingPage() {
             </div>
 
             <h2
-              className="text-7xl font-serif font-bold mb-16 tracking-tight"
+              className="text-4xl sm:text-5xl lg:text-7xl font-serif font-bold mb-10 sm:mb-16 tracking-tight"
               style={{
                 fontFamily: "DM Serif Display, Georgia, serif",
                 letterSpacing: "-0.03em",
@@ -300,7 +296,7 @@ export function LandingPage() {
               From the music stand
             </h2>
 
-            <div className="grid md:grid-cols-3 gap-8">
+            <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-6 sm:gap-8">
               {[
                 {
                   quote:
@@ -359,7 +355,7 @@ export function LandingPage() {
           />
           <div className="max-w-4xl mx-auto text-center relative z-10">
             <h2
-              className="text-7xl font-serif font-bold mb-6 tracking-tight leading-tight"
+              className="text-4xl sm:text-5xl lg:text-7xl font-serif font-bold mb-6 tracking-tight leading-tight"
               style={{
                 fontFamily: "DM Serif Display, Georgia, serif",
                 letterSpacing: "-0.03em",

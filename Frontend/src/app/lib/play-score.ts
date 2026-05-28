@@ -28,12 +28,15 @@ function noteToFrequency(step: string, octave: number, alter: number): number {
   return 440 * Math.pow(2, (midi - 69) / 12);
 }
 
-function parseForPlayback(xml: string): { notes: PlayNote[]; totalDuration: number; melodyCount: number } {
+function parseForPlayback(
+  xml: string,
+  bpmOverride?: number
+): { notes: PlayNote[]; totalDuration: number; melodyCount: number; baseBpm: number } {
   const doc = new DOMParser().parseFromString(xml, "application/xml");
 
-  let bpm = 120;
+  let baseBpm = 120;
   const firstSound = doc.querySelector("sound[tempo]");
-  if (firstSound) bpm = parseFloat(firstSound.getAttribute("tempo") ?? "120");
+  if (firstSound) baseBpm = parseFloat(firstSound.getAttribute("tempo") ?? "120");
 
   const melodyNotes: PlayNote[] = [];
   const chordNotes: PlayNote[] = [];
@@ -41,14 +44,16 @@ function parseForPlayback(xml: string): { notes: PlayNote[]; totalDuration: numb
   for (const part of Array.from(doc.getElementsByTagName("part"))) {
     let measureStartSec = 0;
     let divisions = 1;
-    let currentBpm = bpm;
+    let currentBpm = bpmOverride ?? baseBpm;
 
     for (const measure of Array.from(part.getElementsByTagName("measure"))) {
       const divEl = measure.getElementsByTagName("divisions")[0];
       if (divEl) divisions = parseInt(divEl.textContent!, 10);
 
-      const soundEl = measure.querySelector("sound[tempo]");
-      if (soundEl) currentBpm = parseFloat(soundEl.getAttribute("tempo") ?? String(currentBpm));
+      if (!bpmOverride) {
+        const soundEl = measure.querySelector("sound[tempo]");
+        if (soundEl) currentBpm = parseFloat(soundEl.getAttribute("tempo") ?? String(currentBpm));
+      }
 
       const secPerBeat = 60 / currentBpm;
       let cursor = measureStartSec;
@@ -126,7 +131,7 @@ function parseForPlayback(xml: string): { notes: PlayNote[]; totalDuration: numb
 
   const notes = [...melodyNotes, ...chordNotes];
   const totalDuration = notes.reduce((m, n) => Math.max(m, n.startSec + n.durationSec), 0);
-  return { notes, totalDuration, melodyCount: melodyNotes.length };
+  return { notes, totalDuration, melodyCount: melodyNotes.length, baseBpm };
 }
 
 export class ScorePlayer {
@@ -139,20 +144,56 @@ export class ScorePlayer {
   private nodes: { osc: OscillatorNode; gain: GainNode }[] = [];
   private endTimer: ReturnType<typeof setTimeout> | null = null;
   private melodyCount = 0;
+  private _xml = "";
+  private _bpmOverride: number | null = null;
+  private _baseBpm = 120;
   onEnd: (() => void) | null = null;
 
   load(xml: string) {
     this.stop();
-    const { notes, totalDuration, melodyCount } = parseForPlayback(xml);
+    this._xml = xml;
+    this._reparse();
+  }
+
+  /** Override the playback tempo. Pass null to use the score's own tempo. */
+  setBpm(bpm: number | null) {
+    this._bpmOverride = bpm;
+    if (this._xml) this._reparse();
+  }
+
+  /** The tempo as written in the score (before any override). */
+  getBaseBpm(): number { return this._baseBpm; }
+
+  /** Current effective BPM (override if set, otherwise score tempo). */
+  getEffectiveBpm(): number { return this._bpmOverride ?? this._baseBpm; }
+
+  private _reparse() {
+    const { notes, totalDuration, melodyCount, baseBpm } = parseForPlayback(
+      this._xml,
+      this._bpmOverride ?? undefined
+    );
     this.notes = notes;
     this.totalDuration = totalDuration;
     this.melodyCount = melodyCount;
+    this._baseBpm = baseBpm;
     this.pauseOffset = 0;
   }
 
   /** Start times (seconds) of melody notes only — index-aligned with non-rest cursorNotes. */
   getNoteTimes(): number[] {
     return this.notes.slice(0, this.melodyCount).map((n) => n.startSec);
+  }
+
+  /**
+   * Melody note times sorted ascending by time, with each note's original
+   * XML-parse-order index. Use this for correct cursor tracking in multi-staff scores
+   * where notes from different staves interleave in XML order but play simultaneously.
+   */
+  getSortedNoteTimeline(): { time: number; index: number }[] {
+    return this.notes
+      .slice(0, this.melodyCount)
+      .map((n, i) => ({ time: n.startSec, index: i }))
+      .sort((a, b) => a.time - b.time || a.index - b.index);
   }
 
   /** Current playback position in seconds. */
@@ -173,8 +214,16 @@ export class ScorePlayer {
     this.nodes = [];
 
     for (const note of this.notes) {
-      if (note.startSec < this.pauseOffset - 0.05) continue;
-      const start = now + (note.startSec - this.pauseOffset);
+      const noteEnd = note.startSec + note.durationSec;
+      // Skip notes that fully ended before the resume point
+      if (noteEnd < this.pauseOffset - 0.01) continue;
+
+      // A note that started before pauseOffset but hasn't ended yet: start it now as a partial
+      const effectiveStart = Math.max(note.startSec, this.pauseOffset);
+      const effectiveDur = noteEnd - effectiveStart;
+      if (effectiveDur < 0.03) continue;
+
+      const start = now + (effectiveStart - this.pauseOffset);
       if (start < now - 0.01) continue;
 
       const peakGain = note.isChord ? 0.06 : 0.15;
@@ -183,15 +232,15 @@ export class ScorePlayer {
       gain.connect(ctx.destination);
       gain.gain.setValueAtTime(0, start);
       gain.gain.linearRampToValueAtTime(peakGain, start + 0.02);
-      gain.gain.setValueAtTime(peakGain, start + note.durationSec - 0.05);
-      gain.gain.linearRampToValueAtTime(0, start + note.durationSec);
+      gain.gain.setValueAtTime(peakGain, start + effectiveDur - 0.05);
+      gain.gain.linearRampToValueAtTime(0, start + effectiveDur);
 
       const osc = ctx.createOscillator();
       osc.type = note.isChord ? "sine" : "triangle";
       osc.frequency.value = note.frequency;
       osc.connect(gain);
       osc.start(start);
-      osc.stop(start + note.durationSec + 0.05);
+      osc.stop(start + effectiveDur + 0.05);
 
       this.nodes.push({ osc, gain });
     }
@@ -210,7 +259,17 @@ export class ScorePlayer {
     if (!this.playing || !this.ctx) return;
     this.pauseOffset = this.ctx.currentTime - this.startedAt;
     this.playing = false;
-    this._cancelNodes();
+    // Fade out over 80ms instead of hard-cutting
+    const now = this.ctx.currentTime;
+    for (const { gain } of this.nodes) {
+      try {
+        gain.gain.cancelScheduledValues(now);
+        gain.gain.setValueAtTime(gain.gain.value, now);
+        gain.gain.linearRampToValueAtTime(0, now + 0.08);
+      } catch {}
+    }
+    setTimeout(() => this._cancelNodes(), 100);
+    if (this.endTimer !== null) { clearTimeout(this.endTimer); this.endTimer = null; }
   }
 
   stop() {

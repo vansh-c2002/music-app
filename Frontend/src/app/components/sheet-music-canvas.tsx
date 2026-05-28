@@ -192,6 +192,13 @@ function staffBoundaryYs(container: HTMLElement, lineSpacingPx: number): number[
   return boundaries;
 }
 
+// OSMD's Pitch.halfTone = (octave+1)*12 + semitones_from_C + accidental = MIDI number.
+// Same formula as play-score.ts noteToFrequency — used for pitch-based note matching.
+const SEMI_FROM_C: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+function noteMidi(n: ParsedNote): number {
+  return (n.octave + 1) * 12 + (SEMI_FROM_C[n.step] ?? 0) + Math.round(n.alter);
+}
+
 function buildHitsFromOsmd(
   osmd: any,
   container: HTMLElement,
@@ -220,30 +227,48 @@ function buildHitsFromOsmd(
         const gMeasure = staffLines[s];
         if (!gMeasure?.staffEntries) continue;
         const candidates = byKey.get(`${m}_${s}`) ?? [];
-        let idx = 0;
+        const usedIds = new Set<number>();
+        let fallbackPos = 0;
 
         for (const se of gMeasure.staffEntries) {
           for (const ve of se.graphicalVoiceEntries ?? []) {
             for (const gn of ve.notes ?? []) {
-              const vfn = gn.vfnote?.[0] ?? gn.vfNote?.[0];
+              // OSMD 1.8+ exposes getSVGGElement() directly on VexFlowGraphicalNote.
+              // Fall back to the old VexFlow attrs.el path for older builds.
               const groupEl: Element | null =
-                vfn?.attrs?.el ??
-                vfn?.getSVGElement?.() ??
-                vfn?.elem ??
-                (vfn?.note_heads?.[0]?.attrs?.el) ??
-                null;
-              // No VexFlow element = OSMD phantom note with no XML counterpart; skip
-              // without consuming a candidate slot so subsequent notes stay aligned.
+                (gn.getSVGGElement?.() as Element | null) ??
+                (() => {
+                  const vfn = gn.vfnote?.[0] ?? gn.vfNote?.[0];
+                  return (vfn?.attrs?.el ?? vfn?.getSVGElement?.() ?? vfn?.elem ?? null) as Element | null;
+                })();
               if (!groupEl) continue;
 
-              const nhEl = groupEl.querySelector(".vf-notehead") ?? groupEl;
+              // Use per-note notehead SVGs when available (more accurate for chords).
+              const noteheadEls = gn.getNoteheadSVGs?.() as HTMLElement[] | null | undefined;
+              const nhEl: Element =
+                (noteheadEls?.[0] as Element | undefined) ??
+                groupEl.querySelector(".vf-notehead, .vf-note-head, [class*='notehead']") ??
+                groupEl;
               const r = nhEl.getBoundingClientRect();
 
-              const note = candidates[idx++];
+              // --- Pitch-based matching ---
+              let note: ParsedNote | undefined;
+              const halfTone: number | undefined = gn.sourceNote?.pitch?.halfTone;
+              if (halfTone != null && !isNaN(halfTone)) {
+                note = candidates.find(
+                  (c) => !c.isRest && !usedIds.has(c.id) && noteMidi(c) === halfTone
+                );
+              }
+              // Positional fallback for rests / grace notes / missing pitch data.
+              if (!note) {
+                while (fallbackPos < candidates.length && usedIds.has(candidates[fallbackPos].id))
+                  fallbackPos++;
+                note = candidates[fallbackPos++];
+              }
               if (!note) continue;
+              usedIds.add(note.id);
 
-              // Zero-bounds = invisible note (e.g. second half of a tie); idx
-              // is still advanced above to stay in sync with our parsed list.
+              // Zero-bounds = invisible note (e.g. second half of a tie): consume slot but skip hit.
               if (r.width === 0 && r.height === 0) continue;
 
               hits.push({
@@ -347,34 +372,29 @@ function findNoteContainer(noteheadEl: Element): Element | null {
   return null;
 }
 
-function colorFill(el: Element, color: string | null) {
-  const children = el.querySelectorAll("path, rect, ellipse, circle, use");
-  (children.length > 0 ? Array.from(children) : [el]).forEach((c) => {
+// Set both fill and stroke so we cover filled paths (noteheads, stems) and stroked lines alike.
+function applyColor(el: Element, color: string | null) {
+  const targets = el.querySelectorAll("path, rect, ellipse, circle, use, line, polyline, polygon");
+  (targets.length > 0 ? Array.from(targets) : [el]).forEach((c) => {
     (c as SVGElement).style.fill = color ?? "";
-    (c as SVGElement).style.stroke = color ? "none" : "";
-  });
-}
-
-function colorStroke(el: Element, color: string | null) {
-  const children = el.querySelectorAll("path, rect, line");
-  (children.length > 0 ? Array.from(children) : [el]).forEach((c) => {
     (c as SVGElement).style.stroke = color ?? "";
-    (c as SVGElement).style.fill = color ? "none" : "";
   });
 }
 
 function colorNote(noteheadEl: Element, color: string | null) {
-  colorFill(noteheadEl, color);
+  applyColor(noteheadEl, color);
 
   const container = findNoteContainer(noteheadEl);
   if (!container) return;
 
   const stemEl = container.querySelector(".vf-stem");
-  if (stemEl) colorStroke(stemEl, color);
+  if (stemEl) applyColor(stemEl, color);
 
-  // Flag = the "swirl" on standalone eighth/sixteenth notes (not beamed)
   const flagEl = container.querySelector(".vf-flag");
-  if (flagEl) colorFill(flagEl, color);
+  if (flagEl) applyColor(flagEl, color);
+
+  // Accidentals (sharp/flat/natural signs on the note)
+  container.querySelectorAll(".vf-accidental").forEach((acc) => applyColor(acc, color));
 }
 
 export const SheetMusicCanvas = forwardRef<SheetMusicCanvasHandle, Props>(function SheetMusicCanvas(
@@ -401,13 +421,26 @@ export const SheetMusicCanvas = forwardRef<SheetMusicCanvasHandle, Props>(functi
     try {
       const { notes } = parseMusicXml(musicXml);
       const lineSpacingPx = measureLineSpacing(osmdDivRef.current);
-      const hits =
+      const rawHits =
         buildHitsFromOsmd(osmdRef.current, osmdDivRef.current, notes, lineSpacingPx) ??
         buildHits(osmdDivRef.current, notes);
-      setNoteHits(hits);
-      setContainerH(osmdDivRef.current.scrollHeight);
+
+      // Hit positions are computed relative to osmdDivRef, but the SVG overlay is
+      // absolutely positioned relative to wrapperRef (which includes the title section
+      // above the score). Apply the offset so coordinates are in SVG / wrapper space.
+      const wrapperRect = wrapperRef.current?.getBoundingClientRect();
+      const osmdRect = osmdDivRef.current.getBoundingClientRect();
+      const dy = wrapperRect ? osmdRect.top - wrapperRect.top : 0;
+      const dx = wrapperRect ? osmdRect.left - wrapperRect.left : 0;
+      const shift = <T extends { x: number; y: number }>(h: T): T =>
+        (dx || dy) ? { ...h, x: h.x + dx, y: h.y + dy } : h;
+
+      setNoteHits(rawHits.map(shift));
+      setContainerH(wrapperRef.current?.scrollHeight ?? osmdDivRef.current.scrollHeight);
       if (harmonies?.length) {
-        setChordHits(buildChordHits(osmdDivRef.current, harmonies));
+        setChordHits(buildChordHits(osmdDivRef.current, harmonies).map(shift));
+      } else {
+        setChordHits([]);
       }
     } catch (e) {
       console.warn("Note hit build failed:", e);
@@ -451,13 +484,13 @@ export const SheetMusicCanvas = forwardRef<SheetMusicCanvasHandle, Props>(functi
     return () => ro.disconnect();
   }, [rebuild]);
 
-  // Color selected noteheads directly in the OSMD SVG
+  // Color selected noteheads directly in the OSMD SVG.
+  // Match by note.id: both noteHits and selectedNotes come from parseMusicXml(same xml),
+  // so the n-th note in document order gets id=n in both calls — IDs are stable identifiers.
   useEffect(() => {
+    const selectedIds = new Set(selectedNotes.map((n) => n.id));
     for (const hit of noteHits) {
-      const isSelected = selectedNotes.some(
-        (n) => n.measure === hit.note.measure && n.xmlIndex === hit.note.xmlIndex
-      );
-      colorNote(hit.el, isSelected ? ACCENT : null);
+      colorNote(hit.el, !hit.note.isRest && selectedIds.has(hit.note.id) ? ACCENT : null);
     }
   }, [noteHits, selectedNotes]);
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { ArrowLeft, Download, FileDown, RotateCcw, RotateCw, ChevronLeft, ChevronRight, BookmarkPlus, Loader2, Play, Pause, Square } from "lucide-react";
+import { ArrowLeft, Download, FileDown, RotateCcw, RotateCw, ChevronLeft, ChevronRight, BookmarkPlus, Loader2, Play, Pause } from "lucide-react";
 import { ScorePlayer } from "../lib/play-score";
 import { Link, useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
@@ -14,7 +14,7 @@ import {
   deleteNote,
   applyDiatonicStep,
   transposeScore,
-  keyLabel,
+  addChordNote,
   parseHarmonies,
   updateHarmony,
   updateComposerInXml,
@@ -51,8 +51,9 @@ export function EditorPage() {
   const canvasRef = useRef<SheetMusicCanvasHandle>(null);
   const playerRef = useRef<ScorePlayer | null>(null);
   const rafRef = useRef<number | null>(null);
-  const nonRestIndicesRef = useRef<number[]>([]);
+  const sortedTimelineRef = useRef<{ time: number; cursorIndices: number[] }[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [bpm, setBpm] = useState(120);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [chordPopup, setChordPopup] = useState<{ harmony: ParsedHarmony; clientX: number; clientY: number; value: string } | null>(null);
@@ -95,8 +96,11 @@ export function EditorPage() {
     player.load(currentXml);
     player.onEnd = () => {
       setIsPlaying(false);
+      setExtraSelected([]);
       if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     };
+    // Sync displayed BPM to what's in the score (preserve any user override)
+    setBpm(player.getEffectiveBpm());
     setIsPlaying(false);
   }, [currentXml]);
 
@@ -191,24 +195,46 @@ export function EditorPage() {
     if (isPlaying) {
       player.pause();
       setIsPlaying(false);
+      setExtraSelected([]);
       if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     } else {
-      // Build index mapping: player melody note i → cursorNotes index (non-rests only)
-      nonRestIndicesRef.current = cursorNotes
+      // Build a time-sorted mapping: player melody note index → cursorNotes index.
+      // Sorting by time (not XML order) ensures multi-staff scores with interleaved
+      // treble/bass notes get the right cursor position during playback.
+      const nonRests = cursorNotes
         .map((n, i) => ({ n, i }))
-        .filter(({ n }) => !n.isRest)
-        .map(({ i }) => i);
+        .filter(({ n }) => !n.isRest);
+      // Build a time-grouped timeline: notes at the same beat are in one group
+      // so that chords and simultaneous treble/bass notes all highlight together.
+      const flat = player
+        .getSortedNoteTimeline()
+        .map(({ time, index }) => ({ time, cursorIdx: nonRests[index]?.i ?? -1 }))
+        .filter(({ cursorIdx }) => cursorIdx >= 0);
+      const groups: { time: number; cursorIndices: number[] }[] = [];
+      for (const { time, cursorIdx } of flat) {
+        const last = groups[groups.length - 1];
+        if (last && Math.abs(last.time - time) < 0.02) {
+          last.cursorIndices.push(cursorIdx);
+        } else {
+          groups.push({ time, cursorIndices: [cursorIdx] });
+        }
+      }
+      sortedTimelineRef.current = groups;
+
       await player.play();
       setIsPlaying(true);
+      let lastGroupIdx = -1;
       const tick = () => {
         const t = player.getCurrentTime();
-        const times = player.getNoteTimes();
+        const tl = sortedTimelineRef.current;
         let j = -1;
-        for (let k = times.length - 1; k >= 0; k--) {
-          if (times[k] <= t + 0.05) { j = k; break; }
+        for (let k = tl.length - 1; k >= 0; k--) {
+          if (tl[k].time <= t + 0.05) { j = k; break; }
         }
-        if (j >= 0 && j < nonRestIndicesRef.current.length) {
-          setCursorStep(nonRestIndicesRef.current[j]);
+        if (j >= 0 && j !== lastGroupIdx) {
+          lastGroupIdx = j;
+          setCursorStep(tl[j].cursorIndices[0]);
+          setExtraSelected(tl[j].cursorIndices.slice(1));
         }
         rafRef.current = requestAnimationFrame(tick);
       };
@@ -216,10 +242,10 @@ export function EditorPage() {
     }
   };
 
-  const handleStop = () => {
-    playerRef.current?.stop();
-    setIsPlaying(false);
-    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+  const handleBpmChange = (newBpm: number) => {
+    const clamped = Math.max(20, Math.min(300, newBpm));
+    setBpm(clamped);
+    playerRef.current?.setBpm(clamped);
   };
 
   const handleChordClick = (harmony: ParsedHarmony, clientX: number, clientY: number) => {
@@ -229,6 +255,10 @@ export function EditorPage() {
   const handleComposerCommit = (composer: string) => {
     pushXml(updateComposerInXml(currentXml, composer));
   };
+
+  const handleAddChordNote = useCallback((note: ParsedNote, step: string, octave: number, alter: number) => {
+    pushXml(addChordNote(currentXml, note.measure, note.xmlIndex, step, octave, alter));
+  }, [currentXml, histIdx]);
 
   const handleTranspose = (semitones: number) => {
     pushXml(transposeScore(currentXml, semitones));
@@ -267,18 +297,23 @@ export function EditorPage() {
     const osmdDiv = canvasRef.current?.getOsmdDiv();
     if (!osmdDiv) return;
     const svgContent = osmdDiv.innerHTML;
-    const title = displayTitle;
+    const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const titleEsc = esc(displayTitle);
+    const composerEsc = scoreInfo?.composer ? esc(scoreInfo.composer) : "";
     const win = window.open("", "_blank");
     if (!win) return;
     win.document.write(`<!DOCTYPE html>
 <html>
 <head>
-  <title>${title}</title>
+  <title>${titleEsc}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: white; font-family: serif; }
-    .score-wrap { width: 100%; padding: 24px 32px; }
-    svg { width: 100% !important; height: auto !important; }
+    body { background: white; font-family: 'Times New Roman', Georgia, serif; }
+    .score-wrap { width: 100%; padding: 20px 32px 32px; }
+    .score-header { text-align: center; padding: 20px 0 14px; }
+    .score-title { font-size: 26px; font-weight: bold; letter-spacing: -0.02em; }
+    .score-composer { font-size: 13px; color: #555; margin-top: 5px; }
+    svg { width: 100% !important; height: auto !important; display: block; }
     @page { size: A4; margin: 12mm; }
     @media print {
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -286,10 +321,14 @@ export function EditorPage() {
   </style>
 </head>
 <body>
-  <div class="score-wrap">${svgContent}</div>
-  <script>
-    window.onload = () => { window.print(); };
-  </script>
+  <div class="score-wrap">
+    <div class="score-header">
+      <div class="score-title">${titleEsc}</div>
+      ${composerEsc ? `<div class="score-composer">${composerEsc}</div>` : ""}
+    </div>
+    ${svgContent}
+  </div>
+  <script>window.onload = () => { window.print(); };<\/script>
 </body>
 </html>`);
     win.document.close();
@@ -380,6 +419,7 @@ export function EditorPage() {
 
           <div className="w-px h-6 bg-border mx-1" />
 
+          {/* Play / Pause */}
           <button
             onClick={handlePlayPause}
             className="p-2 rounded-lg bg-muted hover:bg-muted/80 transition-colors"
@@ -387,14 +427,21 @@ export function EditorPage() {
           >
             {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
           </button>
-          <button
-            onClick={handleStop}
-            disabled={!isPlaying}
-            className="p-2 rounded-lg bg-muted hover:bg-muted/80 disabled:opacity-40 transition-colors"
-            title="Stop"
-          >
-            <Square className="w-4 h-4" />
-          </button>
+
+          {/* BPM input */}
+          <div className="flex items-center gap-1 px-2 py-1 rounded-lg border-2 border-[#1C1917]/20 bg-[#F5F0E8] text-xs">
+            <input
+              type="number"
+              min={20}
+              max={300}
+              value={bpm}
+              onChange={(e) => handleBpmChange(Number(e.target.value))}
+              onKeyDown={(e) => e.stopPropagation()}
+              className="bpm-field w-10 bg-transparent outline-none text-center text-[#1C1917] font-medium"
+              title="Tempo (BPM)"
+            />
+            <span className="text-[#1C1917]/50 select-none">bpm</span>
+          </div>
 
           {currentUser && (
             <button
@@ -471,12 +518,6 @@ export function EditorPage() {
 
         {/* Right side — key + transpose */}
         <div className="ml-auto flex items-center gap-3">
-          {scoreInfo && (
-            <div className="px-3 py-1 rounded-lg border-2 border-[#1C1917] bg-[#B8D8E8] text-xs font-medium text-[#1C1917] shadow-[2px_2px_0_#1C1917]">
-              𝄞 {keyLabel(scoreInfo)}
-            </div>
-          )}
-
           <div className="flex items-center gap-1" title="Transpose whole piece">
             <span className="text-xs text-[#1C1917]/60 mr-1 font-medium">Transpose:</span>
             {[
@@ -528,6 +569,7 @@ export function EditorPage() {
             pushXml(updateNoteDuration(currentXml, note.measure, note.xmlIndex, type))
           }
           onDelete={handleDelete}
+          onAddChordNote={handleAddChordNote}
         />
       </div>
 
@@ -561,6 +603,9 @@ export function EditorPage() {
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&display=swap');
+        input[type=number].bpm-field::-webkit-outer-spin-button,
+        input[type=number].bpm-field::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number].bpm-field { -moz-appearance: textfield; }
       `}</style>
     </div>
   );

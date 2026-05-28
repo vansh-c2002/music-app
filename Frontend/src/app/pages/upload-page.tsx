@@ -108,41 +108,21 @@ export function UploadPage() {
       setError(`"${tooBig.name}" exceeds the 10MB limit.`);
       return;
     }
-    if (files.length > 1) {
-      const previews = files.map((f) =>
-        f.type !== "application/pdf" ? URL.createObjectURL(f) : ""
-      );
-      setOrderedFiles([...files]);
-      setOrderPreviewUrls(previews);
-      setShowOrderReview(true);
-    } else {
-      setFileName(files[0].name);
-      pendingFile.current = files;
-      if (files[0].type !== "application/pdf") {
-        setPreviewUrl(URL.createObjectURL(files[0]));
-      } else {
-        setPreviewUrl(null);
-      }
-      setShowTypePicker(true);
-    }
+    const previews = files.map((f) =>
+      f.type !== "application/pdf" ? URL.createObjectURL(f) : ""
+    );
+    setOrderedFiles([...files]);
+    setOrderPreviewUrls(previews);
+    pendingFile.current = [...files];
+    setShowOrderReview(true);
   };
 
   const confirmOrder = () => {
-    const names = orderedFiles.map((f) => f.name).join(", ");
-    setFileName(names);
+    setFileName(orderedFiles.map((f) => f.name).join(", "));
     pendingFile.current = orderedFiles;
     const firstImgIdx = orderedFiles.findIndex((f) => f.type !== "application/pdf");
-    if (firstImgIdx !== -1) {
-      setPreviewUrl(orderPreviewUrls[firstImgIdx]);
-      orderPreviewUrls.forEach((url, i) => {
-        if (i !== firstImgIdx && url) URL.revokeObjectURL(url);
-      });
-    } else {
-      setPreviewUrl(null);
-      orderPreviewUrls.forEach((url) => url && URL.revokeObjectURL(url));
-    }
-    setOrderPreviewUrls([]);
-    setOrderedFiles([]);
+    setPreviewUrl(firstImgIdx !== -1 ? orderPreviewUrls[firstImgIdx] : null);
+    // Keep orderedFiles/orderPreviewUrls intact so crop stays available in type picker
     setShowOrderReview(false);
     setShowTypePicker(true);
   };
@@ -245,6 +225,8 @@ export function UploadPage() {
       newUrls[idx] = newUrl;
       setOrderedFiles(newFiles);
       setOrderPreviewUrls(newUrls);
+      pendingFile.current = newFiles;
+      if (!showOrderReview) setPreviewUrl(newUrls[idx] || null);
       setLightboxIndex(idx);
       setCropMode(false);
       setCropStart(null);
@@ -383,60 +365,102 @@ export function UploadPage() {
                 </div>
               )}
 
-              {/* Order review */}
+              {/* Preview / order review */}
               {showOrderReview ? (
                 <div className="relative z-10">
-                  <h2
-                    className="text-3xl font-serif font-bold mb-2 text-center"
-                    style={{ fontFamily: "DM Serif Display, Georgia, serif" }}
-                  >
-                    Confirm page order
-                  </h2>
-                  <p className="text-center text-[#1C1917]/60 text-sm mb-6">
-                    Drag to reorder · {orderedFiles.length} pages
-                  </p>
-                  <div className="mb-6 max-h-72 overflow-y-auto pr-1">
-                    <div className={`h-[3px] rounded-full mx-1 mb-1 bg-[#7FFFD4] transition-opacity duration-100 ${dragOverIndex === 0 ? "opacity-100" : "opacity-0"}`} />
-                    {orderedFiles.map((file, i) => (
-                      <div key={`${file.name}-${file.size}-${i}`}>
-                      <div
-                        draggable
-                        onDragStart={() => handleFileDragStart(i)}
-                        onDragOver={(e) => handleFileDragOver(e, i)}
-                        onDrop={(e) => handleFileDrop(e, i)}
-                        onDragEnd={handleFileDragEnd}
-                        className={`flex items-center gap-3 p-3 rounded-xl border-2 border-[#1C1917]/20 hover:border-[#1C1917]/40 transition-all cursor-grab active:cursor-grabbing bg-white select-none mb-1 ${draggingIndex === i ? "opacity-40" : ""}`}
+                  {orderedFiles.length === 1 ? (
+                    /* Single file — big centered preview */
+                    <>
+                      <h2
+                        className="text-3xl font-serif font-bold mb-1 text-center"
+                        style={{ fontFamily: "DM Serif Display, Georgia, serif" }}
                       >
-                        <GripVertical className="w-5 h-5 text-[#1C1917]/30 flex-shrink-0" />
-                        <span className="w-6 h-6 rounded-full bg-[#F5F0E8] border border-[#1C1917]/20 flex items-center justify-center text-xs font-bold text-[#1C1917]/60 flex-shrink-0">
-                          {i + 1}
-                        </span>
-                        {orderPreviewUrls[i] ? (
+                        Preview
+                      </h2>
+                      <p className="text-center text-[#1C1917]/60 text-sm mb-5">
+                        {orderedFiles[0].name}
+                      </p>
+                      <div className="flex justify-center mb-6">
+                        {orderPreviewUrls[0] ? (
                           <button
-                            onClick={(e) => { e.stopPropagation(); setLightboxIndex(i); setCropMode(false); setCropStart(null); setCropEnd(null); }}
-                            className="relative group flex-shrink-0 cursor-zoom-in"
-                            draggable={false}
+                            onClick={() => { setLightboxIndex(0); setCropMode(false); setCropStart(null); setCropEnd(null); }}
+                            className="relative group cursor-zoom-in"
+                            title="Click to preview or crop"
                           >
                             <img
-                              src={orderPreviewUrls[i]}
-                              alt={`Page ${i + 1}`}
-                              className="w-10 h-14 object-cover rounded border border-[#1C1917]/10"
+                              src={orderPreviewUrls[0]}
+                              alt="Preview"
+                              className="max-h-64 w-auto rounded-xl border-2 border-[#1C1917] shadow-[4px_4px_0_#1C1917] object-contain"
                             />
-                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 rounded transition-all flex items-center justify-center">
-                              <ZoomIn className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <div className="absolute inset-0 rounded-xl bg-black/0 group-hover:bg-black/40 flex items-center justify-center gap-2 transition-all">
+                              <Crop className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                              <span className="text-white text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">Crop</span>
                             </div>
                           </button>
                         ) : (
-                          <div className="w-10 h-14 bg-[#F5F0E8] rounded border border-[#1C1917]/10 flex items-center justify-center flex-shrink-0">
-                            <FileMusic className="w-4 h-4 text-[#1C1917]/30" />
+                          <div className="w-28 h-36 bg-[#F5F0E8] rounded-xl border-2 border-[#1C1917] shadow-[4px_4px_0_#1C1917] flex flex-col items-center justify-center gap-2">
+                            <FileMusic className="w-8 h-8 text-[#1C1917]/30" />
+                            <span className="text-xs text-[#1C1917]/40">PDF</span>
                           </div>
                         )}
-                        <span className="text-sm text-[#1C1917] truncate flex-1">{file.name}</span>
                       </div>
-                      <div className={`h-[3px] rounded-full mx-1 mb-1 bg-[#7FFFD4] transition-opacity duration-100 ${dragOverIndex === i + 1 ? "opacity-100" : "opacity-0"}`} />
+                    </>
+                  ) : (
+                    /* Multiple files — drag-to-reorder list */
+                    <>
+                      <h2
+                        className="text-3xl font-serif font-bold mb-2 text-center"
+                        style={{ fontFamily: "DM Serif Display, Georgia, serif" }}
+                      >
+                        Confirm page order
+                      </h2>
+                      <p className="text-center text-[#1C1917]/60 text-sm mb-6">
+                        Drag to reorder · {orderedFiles.length} pages
+                      </p>
+                      <div className="mb-6 max-h-72 overflow-y-auto pr-1">
+                        <div className={`h-[3px] rounded-full mx-1 mb-1 bg-[#7FFFD4] transition-opacity duration-100 ${dragOverIndex === 0 ? "opacity-100" : "opacity-0"}`} />
+                        {orderedFiles.map((file, i) => (
+                          <div key={`${file.name}-${file.size}-${i}`}>
+                            <div
+                              draggable
+                              onDragStart={() => handleFileDragStart(i)}
+                              onDragOver={(e) => handleFileDragOver(e, i)}
+                              onDrop={(e) => handleFileDrop(e, i)}
+                              onDragEnd={handleFileDragEnd}
+                              className={`flex items-center gap-3 p-3 rounded-xl border-2 border-[#1C1917]/20 hover:border-[#1C1917]/40 transition-all cursor-grab active:cursor-grabbing bg-white select-none mb-1 ${draggingIndex === i ? "opacity-40" : ""}`}
+                            >
+                              <GripVertical className="w-5 h-5 text-[#1C1917]/30 flex-shrink-0" />
+                              <span className="w-6 h-6 rounded-full bg-[#F5F0E8] border border-[#1C1917]/20 flex items-center justify-center text-xs font-bold text-[#1C1917]/60 flex-shrink-0">
+                                {i + 1}
+                              </span>
+                              {orderPreviewUrls[i] ? (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setLightboxIndex(i); setCropMode(false); setCropStart(null); setCropEnd(null); }}
+                                  className="relative group flex-shrink-0 cursor-zoom-in"
+                                  draggable={false}
+                                >
+                                  <img
+                                    src={orderPreviewUrls[i]}
+                                    alt={`Page ${i + 1}`}
+                                    className="w-10 h-14 object-cover rounded border border-[#1C1917]/10"
+                                  />
+                                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 rounded transition-all flex items-center justify-center">
+                                    <ZoomIn className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                                  </div>
+                                </button>
+                              ) : (
+                                <div className="w-10 h-14 bg-[#F5F0E8] rounded border border-[#1C1917]/10 flex items-center justify-center flex-shrink-0">
+                                  <FileMusic className="w-4 h-4 text-[#1C1917]/30" />
+                                </div>
+                              )}
+                              <span className="text-sm text-[#1C1917] truncate flex-1">{file.name}</span>
+                            </div>
+                            <div className={`h-[3px] rounded-full mx-1 mb-1 bg-[#7FFFD4] transition-opacity duration-100 ${dragOverIndex === i + 1 ? "opacity-100" : "opacity-0"}`} />
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </>
+                  )}
                   <button
                     onClick={confirmOrder}
                     className="w-full py-3 bg-[#7FFFD4] border-2 border-[#1C1917] rounded-full font-medium hover:translate-y-[-2px] transition-all shadow-[4px_4px_0_#1C1917] hover:shadow-[6px_6px_0_#1C1917]"
@@ -447,7 +471,7 @@ export function UploadPage() {
                     onClick={handleReset}
                     className="mt-4 block mx-auto text-sm text-[#1C1917]/50 hover:text-[#1C1917] transition-colors"
                   >
-                    ← Choose different files
+                    ← Choose different {orderedFiles.length === 1 ? "file" : "files"}
                   </button>
                 </div>
 
@@ -460,9 +484,10 @@ export function UploadPage() {
                   >
                     What type of score is this?
                   </h2>
-                  <p className="text-center text-[#1C1917]/60 text-sm mb-8">
+                  <p className="text-center text-[#1C1917]/60 text-sm mb-5">
                     {fileName}
                   </p>
+
                   <div className="grid md:grid-cols-2 gap-6">
                     <button
                       onClick={() => {

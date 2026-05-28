@@ -1,4 +1,5 @@
-import { ChevronUp, ChevronDown } from "lucide-react";
+import { ChevronUp, ChevronDown, Plus } from "lucide-react";
+import { useState } from "react";
 import type { ParsedNote } from "../lib/parse-musicxml";
 import { pitchLabel, applyDiatonicStep } from "../lib/parse-musicxml";
 
@@ -18,12 +19,15 @@ const ACCIDENTALS = [
 
 const PASTEL = ["#F2C4C4", "#B8D8E8", "#B8D4B0", "#F5E6A0", "#F9C8D8"];
 
+const NOTE_STEPS = ["C", "D", "E", "F", "G", "A", "B"];
+
 interface PropertiesPanelProps {
   note: ParsedNote | null;
   onPitchStep: (note: ParsedNote, newStep: string, newOctave: number) => void;
   onAlterChange: (note: ParsedNote, alter: number) => void;
   onDurationChange: (note: ParsedNote, type: string) => void;
   onDelete: (note: ParsedNote) => void;
+  onAddChordNote: (note: ParsedNote, step: string, octave: number, alter: number) => void;
 }
 
 export function PropertiesPanel({
@@ -32,7 +36,10 @@ export function PropertiesPanel({
   onAlterChange,
   onDurationChange,
   onDelete,
+  onAddChordNote,
 }: PropertiesPanelProps) {
+  const [addingChord, setAddingChord] = useState(false);
+  const [chordAlter, setChordAlter] = useState(0);
   const handleUp = () => {
     if (!note || note.isRest) return;
     const { step, octave } = applyDiatonicStep(note.step, note.octave, 1);
@@ -129,6 +136,59 @@ export function PropertiesPanel({
                       </button>
                     ))}
                   </div>
+                </div>
+
+                {/* Add chord note */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-[#1C1917]/50 uppercase tracking-wide">
+                      Add to Chord
+                    </label>
+                    <button
+                      onClick={() => { setAddingChord((v) => !v); setChordAlter(0); }}
+                      className="w-5 h-5 rounded border-2 border-[#1C1917]/30 flex items-center justify-center hover:border-[#1C1917] transition-colors"
+                    >
+                      <Plus className="w-3 h-3 text-[#1C1917]/60" />
+                    </button>
+                  </div>
+                  {addingChord && (
+                    <div className="space-y-1.5">
+                      {/* Accidental for the new chord note */}
+                      <div className="flex gap-1">
+                        {ACCIDENTALS.map((a) => (
+                          <button
+                            key={a.value}
+                            onClick={() => setChordAlter(a.value)}
+                            className="flex-1 py-1 rounded text-xs font-bold border-2 transition-all"
+                            style={{
+                              backgroundColor: chordAlter === a.value ? "#1C1917" : "#F5F0E8",
+                              color: chordAlter === a.value ? "white" : "#1C1917",
+                              borderColor: chordAlter === a.value ? "#1C1917" : "rgba(28,25,23,0.15)",
+                            }}
+                          >
+                            {a.label}
+                          </button>
+                        ))}
+                      </div>
+                      {/* Note letter grid */}
+                      <div className="grid grid-cols-4 gap-1">
+                        {NOTE_STEPS.map((s) => (
+                          <button
+                            key={s}
+                            onClick={() => {
+                              onAddChordNote(note, s, note.octave, chordAlter);
+                              setAddingChord(false);
+                              setChordAlter(0);
+                            }}
+                            className="py-1.5 rounded-lg text-xs font-bold border-2 border-[#1C1917]/20 bg-[#F5F0E8] hover:bg-[#7FFFD4] hover:border-[#1C1917] transition-all text-[#1C1917]"
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-[#1C1917]/40 text-center">same octave as selected note</p>
+                    </div>
+                  )}
                 </div>
               </>
             )}

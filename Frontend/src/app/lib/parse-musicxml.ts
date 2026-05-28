@@ -240,6 +240,79 @@ export function deleteNote(xml: string, measureIdx: number, xmlNoteIdx: number):
   return serializeXml(doc);
 }
 
+/**
+ * Insert a new note element immediately after `xmlNoteIdx` in the given measure,
+ * tagged with <chord/> so it sounds simultaneously with that note.
+ * The new note inherits the duration/type of the parent note.
+ */
+export function addChordNote(
+  xml: string,
+  measureIdx: number,
+  xmlNoteIdx: number,
+  step: string,
+  octave: number,
+  alter: number
+): string {
+  const doc = parseXml(xml);
+  const measures = doc.getElementsByTagName("measure");
+  const measure = measures[measureIdx];
+  if (!measure) return xml;
+
+  const noteEls = Array.from(measure.getElementsByTagName("note"));
+  const refNote = noteEls[xmlNoteIdx];
+  if (!refNote) return xml;
+
+  const durationEl = refNote.getElementsByTagName("duration")[0];
+  const typeEl = refNote.getElementsByTagName("type")[0];
+
+  const newNote = doc.createElement("note");
+
+  // <chord/> must be the first child
+  newNote.appendChild(doc.createElement("chord"));
+
+  // <pitch>
+  const pitch = doc.createElement("pitch");
+  const stepEl = doc.createElement("step");
+  stepEl.textContent = step;
+  pitch.appendChild(stepEl);
+  if (alter !== 0) {
+    const alterEl = doc.createElement("alter");
+    alterEl.textContent = String(alter);
+    pitch.appendChild(alterEl);
+  }
+  const octaveEl = doc.createElement("octave");
+  octaveEl.textContent = String(octave);
+  pitch.appendChild(octaveEl);
+  newNote.appendChild(pitch);
+
+  // Copy duration
+  if (durationEl) {
+    const dur = doc.createElement("duration");
+    dur.textContent = durationEl.textContent;
+    newNote.appendChild(dur);
+  }
+
+  // Copy type
+  if (typeEl) {
+    const type = doc.createElement("type");
+    type.textContent = typeEl.textContent;
+    newNote.appendChild(type);
+  }
+
+  // Insert right after the reference note (and any existing chord notes that follow it)
+  let insertBefore: ChildNode | null = refNote.nextSibling;
+  while (
+    insertBefore &&
+    (insertBefore as Element).tagName === "note" &&
+    (insertBefore as Element).getElementsByTagName("chord").length > 0
+  ) {
+    insertBefore = insertBefore.nextSibling;
+  }
+  measure.insertBefore(newNote, insertBefore);
+
+  return serializeXml(doc);
+}
+
 // Quarter = 1× divisions; whole = 4×; half = 2×; eighth = 0.5×; etc.
 const TYPE_MULTIPLIER: Record<string, number> = {
   whole: 4, half: 2, quarter: 1, eighth: 0.5, sixteenth: 0.25, "32nd": 0.125,
