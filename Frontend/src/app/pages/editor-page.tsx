@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { ArrowLeft, Download, RotateCcw, RotateCw, ChevronLeft, ChevronRight, BookmarkPlus, Loader2, Play, Pause, Square } from "lucide-react";
+import { ArrowLeft, Download, FileDown, RotateCcw, RotateCw, ChevronLeft, ChevronRight, BookmarkPlus, Loader2, Play, Pause, Square } from "lucide-react";
 import { ScorePlayer } from "../lib/play-score";
 import { Link, useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
@@ -15,11 +15,23 @@ import {
   applyDiatonicStep,
   transposeScore,
   keyLabel,
+  parseHarmonies,
+  updateHarmony,
+  updateComposerInXml,
 } from "../lib/parse-musicxml";
-import type { ParsedNote, ScoreInfo } from "../lib/parse-musicxml";
+import type { ParsedNote, ScoreInfo, ParsedHarmony } from "../lib/parse-musicxml";
 import { useAuth } from "../lib/auth-context";
 import { generateThumbnail } from "../lib/generate-thumbnail";
 import { saveScore } from "../lib/save-score";
+
+function updateTitleInXml(xml: string, title: string): string {
+  const escaped = title.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  if (/<movement-title>/.test(xml))
+    return xml.replace(/<movement-title>[^<]*<\/movement-title>/, `<movement-title>${escaped}</movement-title>`);
+  if (/<work-title>/.test(xml))
+    return xml.replace(/<work-title>[^<]*<\/work-title>/, `<work-title>${escaped}</work-title>`);
+  return xml.replace(/(<score-partwise[^>]*>)/, `$1\n  <movement-title>${escaped}</movement-title>`);
+}
 
 function parseScore(xml: string): { notes: ParsedNote[]; info: ScoreInfo | null } {
   try {
@@ -38,7 +50,12 @@ export function EditorPage() {
   const { currentUser } = useAuth();
   const canvasRef = useRef<SheetMusicCanvasHandle>(null);
   const playerRef = useRef<ScorePlayer | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const nonRestIndicesRef = useRef<number[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [chordPopup, setChordPopup] = useState<{ harmony: ParsedHarmony; clientX: number; clientY: number; value: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState<string | null>(null);
 
@@ -50,6 +67,7 @@ export function EditorPage() {
   const [extraSelected, setExtraSelected] = useState<number[]>([]);
 
   const { notes: cursorNotes, info: scoreInfo } = currentXml ? parseScore(currentXml) : { notes: [], info: null };
+  const harmonies = currentXml ? parseHarmonies(currentXml) : [];
   const cursorNote: ParsedNote | null = cursorNotes[cursorStep] ?? null;
 
   const selectedNotes: ParsedNote[] = (() => {
@@ -75,12 +93,18 @@ export function EditorPage() {
     if (!playerRef.current) playerRef.current = new ScorePlayer();
     const player = playerRef.current;
     player.load(currentXml);
-    player.onEnd = () => setIsPlaying(false);
+    player.onEnd = () => {
+      setIsPlaying(false);
+      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    };
     setIsPlaying(false);
   }, [currentXml]);
 
   useEffect(() => {
-    return () => { playerRef.current?.dispose(); };
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      playerRef.current?.dispose();
+    };
   }, []);
 
   const moveNext = useCallback(() => {
@@ -96,6 +120,7 @@ export function EditorPage() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).tagName === "BUTTON") return;
+      if ((e.target as HTMLElement).tagName === "INPUT") return;
       if (e.key === "ArrowRight") { e.preventDefault(); moveNext(); }
       else if (e.key === "ArrowLeft") { e.preventDefault(); movePrev(); }
       else if (e.key === "ArrowUp") {
@@ -166,15 +191,43 @@ export function EditorPage() {
     if (isPlaying) {
       player.pause();
       setIsPlaying(false);
+      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     } else {
+      // Build index mapping: player melody note i → cursorNotes index (non-rests only)
+      nonRestIndicesRef.current = cursorNotes
+        .map((n, i) => ({ n, i }))
+        .filter(({ n }) => !n.isRest)
+        .map(({ i }) => i);
       await player.play();
       setIsPlaying(true);
+      const tick = () => {
+        const t = player.getCurrentTime();
+        const times = player.getNoteTimes();
+        let j = -1;
+        for (let k = times.length - 1; k >= 0; k--) {
+          if (times[k] <= t + 0.05) { j = k; break; }
+        }
+        if (j >= 0 && j < nonRestIndicesRef.current.length) {
+          setCursorStep(nonRestIndicesRef.current[j]);
+        }
+        rafRef.current = requestAnimationFrame(tick);
+      };
+      rafRef.current = requestAnimationFrame(tick);
     }
   };
 
   const handleStop = () => {
     playerRef.current?.stop();
     setIsPlaying(false);
+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+  };
+
+  const handleChordClick = (harmony: ParsedHarmony, clientX: number, clientY: number) => {
+    setChordPopup({ harmony, clientX, clientY, value: harmony.label });
+  };
+
+  const handleComposerCommit = (composer: string) => {
+    pushXml(updateComposerInXml(currentXml, composer));
   };
 
   const handleTranspose = (semitones: number) => {
@@ -210,7 +263,39 @@ export function EditorPage() {
     URL.revokeObjectURL(url);
   };
 
-  const displayTitle = fileName ? fileName.replace(/\.[^.]+$/, "") : "Sheet Music";
+  const handleExportPDF = () => {
+    const osmdDiv = canvasRef.current?.getOsmdDiv();
+    if (!osmdDiv) return;
+    const svgContent = osmdDiv.innerHTML;
+    const title = displayTitle;
+    const win = window.open("", "_blank");
+    if (!win) return;
+    win.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <title>${title}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: white; font-family: serif; }
+    .score-wrap { width: 100%; padding: 24px 32px; }
+    svg { width: 100% !important; height: auto !important; }
+    @page { size: A4; margin: 12mm; }
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+  <div class="score-wrap">${svgContent}</div>
+  <script>
+    window.onload = () => { window.print(); };
+  </script>
+</body>
+</html>`);
+    win.document.close();
+  };
+
+  const displayTitle = scoreInfo?.title || (fileName ? fileName.replace(/\.[^.]+$/, "") : "Sheet Music");
 
   if (!currentXml) return null;
 
@@ -242,12 +327,34 @@ export function EditorPage() {
             <span>Back</span>
           </Link>
           <div className="w-px h-6 bg-[#1C1917]/20" />
-          <h1
-            className="text-lg font-bold text-[#1C1917]"
-            style={{ fontFamily: "DM Serif Display, Georgia, serif" }}
-          >
-            {displayTitle}
-          </h1>
+          {editingTitle ? (
+            <input
+              autoFocus
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={() => {
+                setEditingTitle(false);
+                if (titleDraft.trim() && titleDraft.trim() !== displayTitle)
+                  pushXml(updateTitleInXml(currentXml, titleDraft.trim()));
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+                if (e.key === "Escape") setEditingTitle(false);
+                e.stopPropagation();
+              }}
+              className="text-lg font-bold text-[#1C1917] bg-[#F5F0E8] border-b-2 border-[#1C1917] outline-none px-1 rounded"
+              style={{ fontFamily: "DM Serif Display, Georgia, serif", minWidth: 200 }}
+            />
+          ) : (
+            <button
+              onClick={() => { setTitleDraft(displayTitle); setEditingTitle(true); }}
+              title="Click to edit title"
+              className="text-lg font-bold text-[#1C1917] hover:bg-[#F5F0E8] px-1 rounded transition-colors"
+              style={{ fontFamily: "DM Serif Display, Georgia, serif" }}
+            >
+              {displayTitle}
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -305,14 +412,26 @@ export function EditorPage() {
             </button>
           )}
 
-          {/* Export */}
-          <button
-            onClick={handleDownload}
-            className="px-4 py-2 bg-[#1C1917] text-white border-2 border-[#1C1917] rounded-lg hover:translate-y-[-1px] transition-all shadow-[2px_2px_0_#1C1917] hover:shadow-[4px_4px_0_#1C1917] flex items-center gap-2 font-medium text-sm"
-          >
-            <Download className="w-4 h-4" />
-            <span>Export</span>
-          </button>
+          {/* Export split button */}
+          <div className="flex rounded-lg overflow-hidden border-2 border-[#1C1917] shadow-[2px_2px_0_#1C1917] hover:shadow-[3px_3px_0_#1C1917] hover:translate-y-[-1px] transition-all">
+            <button
+              onClick={handleDownload}
+              className="px-4 py-2 bg-[#1C1917] text-white flex items-center gap-2 font-medium text-sm hover:opacity-90 transition-opacity"
+              title="Export as MusicXML"
+            >
+              <Download className="w-4 h-4" />
+              <span>Export</span>
+            </button>
+            <div className="w-px bg-white/20" />
+            <button
+              onClick={handleExportPDF}
+              className="px-3 py-2 bg-[#1C1917] text-white/70 flex items-center gap-1 font-medium text-sm hover:opacity-90 hover:text-white transition-all"
+              title="Export as PDF"
+            >
+              <FileDown className="w-4 h-4" />
+              <span className="text-xs">PDF</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -389,6 +508,12 @@ export function EditorPage() {
           selectedNotes={selectedNotes}
           onNoteClick={handleNoteClick}
           onPitchCommit={handlePitchCommit}
+          scoreTitle={scoreInfo?.title ?? displayTitle}
+          scoreComposer={scoreInfo?.composer}
+          onTitleCommit={(t) => pushXml(updateTitleInXml(currentXml, t))}
+          onComposerCommit={handleComposerCommit}
+          harmonies={harmonies}
+          onChordClick={handleChordClick}
         />
 
         <PropertiesPanel
@@ -405,6 +530,34 @@ export function EditorPage() {
           onDelete={handleDelete}
         />
       </div>
+
+      {/* Chord symbol edit popup */}
+      {chordPopup && (
+        <div
+          className="fixed z-50 bg-white border-2 border-[#1C1917] rounded-lg shadow-[4px_4px_0_#1C1917] px-3 py-1.5 flex items-center gap-2"
+          style={{ left: chordPopup.clientX - 48, top: chordPopup.clientY - 48 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className="text-xs text-[#1C1917]/40 font-mono">♩</span>
+          <input
+            autoFocus
+            value={chordPopup.value}
+            onChange={(e) => setChordPopup((p) => p ? { ...p, value: e.target.value } : null)}
+            onBlur={() => {
+              if (chordPopup.value.trim())
+                pushXml(updateHarmony(currentXml, chordPopup.harmony.index, chordPopup.value.trim()));
+              setChordPopup(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+              if (e.key === "Escape") setChordPopup(null);
+              e.stopPropagation();
+            }}
+            className="text-sm font-mono font-medium text-[#1C1917] border-none outline-none bg-transparent w-20"
+            placeholder={chordPopup.harmony.label}
+          />
+        </div>
+      )}
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&display=swap');

@@ -2,22 +2,41 @@ interface PlayNote {
   frequency: number;
   startSec: number;
   durationSec: number;
+  isChord: boolean;
 }
 
+const CHORD_INTERVALS: Record<string, number[]> = {
+  "major": [0, 4, 7],
+  "minor": [0, 3, 7],
+  "dominant": [0, 4, 7, 10],
+  "major-seventh": [0, 4, 7, 11],
+  "minor-seventh": [0, 3, 7, 10],
+  "diminished": [0, 3, 6],
+  "augmented": [0, 4, 8],
+  "half-diminished": [0, 3, 6, 10],
+  "diminished-seventh": [0, 3, 6, 9],
+  "major-sixth": [0, 4, 7, 9],
+  "minor-sixth": [0, 3, 7, 9],
+  "suspended-fourth": [0, 5, 7],
+  "suspended-second": [0, 2, 7],
+};
+
+const SEMITONES: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+
 function noteToFrequency(step: string, octave: number, alter: number): number {
-  const semitones: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
-  const midi = (octave + 1) * 12 + (semitones[step] ?? 0) + Math.round(alter);
+  const midi = (octave + 1) * 12 + (SEMITONES[step] ?? 0) + Math.round(alter);
   return 440 * Math.pow(2, (midi - 69) / 12);
 }
 
-function parseForPlayback(xml: string): { notes: PlayNote[]; totalDuration: number } {
+function parseForPlayback(xml: string): { notes: PlayNote[]; totalDuration: number; melodyCount: number } {
   const doc = new DOMParser().parseFromString(xml, "application/xml");
 
   let bpm = 120;
   const firstSound = doc.querySelector("sound[tempo]");
   if (firstSound) bpm = parseFloat(firstSound.getAttribute("tempo") ?? "120");
 
-  const notes: PlayNote[] = [];
+  const melodyNotes: PlayNote[] = [];
+  const chordNotes: PlayNote[] = [];
 
   for (const part of Array.from(doc.getElementsByTagName("part"))) {
     let measureStartSec = 0;
@@ -35,17 +54,23 @@ function parseForPlayback(xml: string): { notes: PlayNote[]; totalDuration: numb
       let cursor = measureStartSec;
       let lastAdvance = 0;
       let measureEnd = measureStartSec;
+      const measureHarmonies: Array<{ startSec: number; root: string; alter: number; kind: string }> = [];
 
       for (const child of Array.from(measure.childNodes) as Element[]) {
         const tag = child.nodeName;
-        if (tag === "note") {
-          const isChord = child.getElementsByTagName("chord").length > 0;
+        if (tag === "harmony") {
+          const rootStep = child.getElementsByTagName("root-step")[0]?.textContent?.trim() ?? "C";
+          const rootAlter = parseFloat(child.getElementsByTagName("root-alter")[0]?.textContent ?? "0");
+          const kind = child.getElementsByTagName("kind")[0]?.textContent?.trim() ?? "major";
+          measureHarmonies.push({ startSec: cursor, root: rootStep, alter: rootAlter, kind });
+        } else if (tag === "note") {
+          const isNoteChord = child.getElementsByTagName("chord").length > 0;
           const isRest = child.getElementsByTagName("rest").length > 0;
           const durEl = child.getElementsByTagName("duration")[0];
           const durSec = durEl
             ? (parseInt(durEl.textContent!, 10) / divisions) * secPerBeat
             : secPerBeat;
-          const startSec = isChord ? cursor - lastAdvance : cursor;
+          const startSec = isNoteChord ? cursor - lastAdvance : cursor;
 
           if (!isRest) {
             const pitchEl = child.getElementsByTagName("pitch")[0];
@@ -53,15 +78,16 @@ function parseForPlayback(xml: string): { notes: PlayNote[]; totalDuration: numb
               const step = pitchEl.getElementsByTagName("step")[0]?.textContent?.trim() ?? "C";
               const octave = parseInt(pitchEl.getElementsByTagName("octave")[0]?.textContent ?? "4", 10);
               const alter = parseFloat(pitchEl.getElementsByTagName("alter")[0]?.textContent ?? "0");
-              notes.push({
+              melodyNotes.push({
                 frequency: noteToFrequency(step, octave, alter),
                 startSec,
                 durationSec: durSec * 0.9,
+                isChord: false,
               });
             }
           }
 
-          if (!isChord) {
+          if (!isNoteChord) {
             lastAdvance = durSec;
             cursor += durSec;
             measureEnd = Math.max(measureEnd, cursor);
@@ -74,12 +100,33 @@ function parseForPlayback(xml: string): { notes: PlayNote[]; totalDuration: numb
           if (d) { cursor += (parseInt(d.textContent!, 10) / divisions) * secPerBeat; measureEnd = Math.max(measureEnd, cursor); }
         }
       }
+
+      // Schedule harmony chord tones (soft sine wave, octave 3 voicing)
+      for (let hi = 0; hi < measureHarmonies.length; hi++) {
+        const h = measureHarmonies[hi];
+        const durSec = hi < measureHarmonies.length - 1
+          ? measureHarmonies[hi + 1].startSec - h.startSec
+          : measureEnd - h.startSec;
+        if (durSec < 0.05) continue;
+        const intervals = CHORD_INTERVALS[h.kind] ?? [0, 4, 7];
+        const rootMidi = 4 * 12 + (SEMITONES[h.root] ?? 0) + Math.round(h.alter);
+        for (const interval of intervals) {
+          chordNotes.push({
+            frequency: 440 * Math.pow(2, (rootMidi + interval - 69) / 12),
+            startSec: h.startSec,
+            durationSec: durSec * 0.85,
+            isChord: true,
+          });
+        }
+      }
+
       measureStartSec = measureEnd;
     }
   }
 
+  const notes = [...melodyNotes, ...chordNotes];
   const totalDuration = notes.reduce((m, n) => Math.max(m, n.startSec + n.durationSec), 0);
-  return { notes, totalDuration };
+  return { notes, totalDuration, melodyCount: melodyNotes.length };
 }
 
 export class ScorePlayer {
@@ -91,14 +138,27 @@ export class ScorePlayer {
   private playing = false;
   private nodes: { osc: OscillatorNode; gain: GainNode }[] = [];
   private endTimer: ReturnType<typeof setTimeout> | null = null;
+  private melodyCount = 0;
   onEnd: (() => void) | null = null;
 
   load(xml: string) {
     this.stop();
-    const { notes, totalDuration } = parseForPlayback(xml);
+    const { notes, totalDuration, melodyCount } = parseForPlayback(xml);
     this.notes = notes;
     this.totalDuration = totalDuration;
+    this.melodyCount = melodyCount;
     this.pauseOffset = 0;
+  }
+
+  /** Start times (seconds) of melody notes only — index-aligned with non-rest cursorNotes. */
+  getNoteTimes(): number[] {
+    return this.notes.slice(0, this.melodyCount).map((n) => n.startSec);
+  }
+
+  /** Current playback position in seconds. */
+  getCurrentTime(): number {
+    if (!this.ctx) return this.pauseOffset;
+    return this.playing ? this.ctx.currentTime - this.startedAt : this.pauseOffset;
   }
 
   async play() {
@@ -117,15 +177,17 @@ export class ScorePlayer {
       const start = now + (note.startSec - this.pauseOffset);
       if (start < now - 0.01) continue;
 
+      const peakGain = note.isChord ? 0.06 : 0.15;
+
       const gain = ctx.createGain();
       gain.connect(ctx.destination);
       gain.gain.setValueAtTime(0, start);
-      gain.gain.linearRampToValueAtTime(0.15, start + 0.015);
-      gain.gain.setValueAtTime(0.15, start + note.durationSec - 0.04);
+      gain.gain.linearRampToValueAtTime(peakGain, start + 0.02);
+      gain.gain.setValueAtTime(peakGain, start + note.durationSec - 0.05);
       gain.gain.linearRampToValueAtTime(0, start + note.durationSec);
 
       const osc = ctx.createOscillator();
-      osc.type = "triangle";
+      osc.type = note.isChord ? "sine" : "triangle";
       osc.frequency.value = note.frequency;
       osc.connect(gain);
       osc.start(start);

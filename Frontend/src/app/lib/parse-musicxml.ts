@@ -357,5 +357,176 @@ export function transposeScore(xml: string, semitones: number): string {
     fifthsEl.textContent = String(kRaw > 6 ? kRaw - 12 : kRaw);
   }
 
+  // Transpose chord symbols in <harmony> elements (root + optional slash-bass)
+  for (const harmonyEl of Array.from(doc.getElementsByTagName("harmony"))) {
+    for (const group of [
+      { container: "root", stepTag: "root-step", alterTag: "root-alter" },
+      { container: "bass", stepTag: "bass-step", alterTag: "bass-alter" },
+    ]) {
+      const containerEl = harmonyEl.getElementsByTagName(group.container)[0];
+      if (!containerEl) continue;
+      const stepEl  = containerEl.getElementsByTagName(group.stepTag)[0];
+      const alterEl = containerEl.getElementsByTagName(group.alterTag)[0];
+      if (!stepEl) continue;
+
+      const step  = stepEl.textContent!.trim();
+      const alter = parseFloat(alterEl?.textContent ?? "0");
+      const semMod = (((NOTE_SEMITONES[step] ?? 0) + alter + semitones) % 12 + 12) % 12;
+      const { step: ns, alter: na } = table[semMod];
+
+      stepEl.textContent = ns;
+      if (na !== 0) {
+        if (alterEl) {
+          alterEl.textContent = String(na);
+        } else {
+          const el = doc.createElement(group.alterTag);
+          el.textContent = String(na);
+          containerEl.appendChild(el);
+        }
+      } else if (alterEl) {
+        containerEl.removeChild(alterEl);
+      }
+    }
+  }
+
+  return serializeXml(doc);
+}
+
+// ---- Harmony / chord symbol API ----
+
+const KIND_TO_LABEL: Record<string, string> = {
+  "major": "", "minor": "m", "dominant": "7",
+  "major-seventh": "maj7", "minor-seventh": "m7",
+  "diminished": "dim", "augmented": "+", "half-diminished": "m7b5",
+  "diminished-seventh": "dim7", "major-sixth": "6", "minor-sixth": "m6",
+  "suspended-fourth": "sus4", "suspended-second": "sus2",
+  "dominant-ninth": "9", "major-ninth": "maj9", "minor-ninth": "m9",
+};
+
+const LABEL_TO_KIND: Record<string, string> = {
+  "": "major", "M": "major", "maj": "major",
+  "m": "minor", "min": "minor",
+  "7": "dominant",
+  "maj7": "major-seventh", "M7": "major-seventh", "Δ": "major-seventh", "Δ7": "major-seventh",
+  "m7": "minor-seventh", "min7": "minor-seventh",
+  "dim": "diminished", "°": "diminished",
+  "+": "augmented", "aug": "augmented",
+  "m7b5": "half-diminished", "ø": "half-diminished", "ø7": "half-diminished",
+  "dim7": "diminished-seventh", "°7": "diminished-seventh",
+  "6": "major-sixth", "m6": "minor-sixth",
+  "sus4": "suspended-fourth", "sus": "suspended-fourth",
+  "sus2": "suspended-second",
+  "9": "dominant-ninth", "maj9": "major-ninth", "m9": "minor-ninth",
+};
+
+export interface ParsedHarmony {
+  index: number;    // 0-based document order among all <harmony> elements
+  measure: number;  // 0-based global measure index
+  label: string;    // display string e.g. "Cmaj7", "Dm7/F"
+  root: string;
+  alter: number;
+  kind: string;
+  bass: string | null;
+  bassAlter: number;
+}
+
+export function parseHarmonies(xml: string): ParsedHarmony[] {
+  const doc = parseXml(xml);
+  const result: ParsedHarmony[] = [];
+  let idx = 0;
+  let globalMeasure = 0;
+  for (const part of Array.from(doc.getElementsByTagName("part"))) {
+    for (const measure of Array.from(part.getElementsByTagName("measure"))) {
+      for (const child of Array.from(measure.childNodes) as Element[]) {
+        if (child.nodeName !== "harmony") continue;
+        const rootEl = child.getElementsByTagName("root")[0];
+        const root = rootEl?.getElementsByTagName("root-step")[0]?.textContent?.trim() ?? "C";
+        const alter = parseFloat(rootEl?.getElementsByTagName("root-alter")[0]?.textContent ?? "0");
+        const kind = child.getElementsByTagName("kind")[0]?.textContent?.trim() ?? "major";
+        const bassEl = child.getElementsByTagName("bass")[0];
+        const bass = bassEl?.getElementsByTagName("bass-step")[0]?.textContent?.trim() ?? null;
+        const bassAlter = parseFloat(bassEl?.getElementsByTagName("bass-alter")[0]?.textContent ?? "0");
+        const alterSym = alter === 1 ? "#" : alter === -1 ? "b" : "";
+        const bassStr = bass ? `/${bass}${bassAlter === 1 ? "#" : bassAlter === -1 ? "b" : ""}` : "";
+        const label = `${root}${alterSym}${KIND_TO_LABEL[kind] ?? kind}${bassStr}`;
+        result.push({ index: idx++, measure: globalMeasure, label, root, alter, kind, bass, bassAlter });
+      }
+      globalMeasure++;
+    }
+    globalMeasure = 0;
+  }
+  return result;
+}
+
+function parseChordLabel(label: string): { root: string; alter: number; kind: string; bass: string | null; bassAlter: number } | null {
+  const m = label.trim().match(/^([A-G])([#♯b♭]?)(.*?)(?:\/([A-G])([#♯b♭]?))?$/);
+  if (!m) return null;
+  const ac = m[2] ?? "";
+  const alter = ac === "#" || ac === "♯" ? 1 : ac === "b" || ac === "♭" ? -1 : 0;
+  const suffix = (m[3] ?? "").trim();
+  const bass = m[4] ?? null;
+  const bac = m[5] ?? "";
+  const bassAlter = bac === "#" || bac === "♯" ? 1 : bac === "b" || bac === "♭" ? -1 : 0;
+  const kind = LABEL_TO_KIND[suffix] ?? LABEL_TO_KIND[suffix.toLowerCase()] ?? "major";
+  return { root: m[1], alter, kind, bass: bass || null, bassAlter };
+}
+
+export function updateHarmony(xml: string, index: number, chordLabel: string): string {
+  const parsed = parseChordLabel(chordLabel);
+  if (!parsed) return xml;
+  const doc = parseXml(xml);
+  const harmonyEl = Array.from(doc.getElementsByTagName("harmony"))[index];
+  if (!harmonyEl) return xml;
+
+  const rootEl = harmonyEl.getElementsByTagName("root")[0];
+  if (rootEl) {
+    const stepEl = rootEl.getElementsByTagName("root-step")[0];
+    const alterEl = rootEl.getElementsByTagName("root-alter")[0];
+    if (stepEl) stepEl.textContent = parsed.root;
+    if (parsed.alter !== 0) {
+      if (alterEl) alterEl.textContent = String(parsed.alter);
+      else { const el = doc.createElement("root-alter"); el.textContent = String(parsed.alter); rootEl.appendChild(el); }
+    } else if (alterEl) rootEl.removeChild(alterEl);
+  }
+
+  const kindEl = harmonyEl.getElementsByTagName("kind")[0];
+  if (kindEl) kindEl.textContent = parsed.kind;
+
+  const existingBass = harmonyEl.getElementsByTagName("bass")[0];
+  if (parsed.bass) {
+    const bassEl = existingBass ?? (() => { const el = doc.createElement("bass"); harmonyEl.appendChild(el); return el; })();
+    const bsEl = bassEl.getElementsByTagName("bass-step")[0] ?? (() => { const el = doc.createElement("bass-step"); bassEl.appendChild(el); return el; })();
+    const baEl = bassEl.getElementsByTagName("bass-alter")[0];
+    bsEl.textContent = parsed.bass;
+    if (parsed.bassAlter !== 0) {
+      if (baEl) baEl.textContent = String(parsed.bassAlter);
+      else { const el = doc.createElement("bass-alter"); el.textContent = String(parsed.bassAlter); bassEl.appendChild(el); }
+    } else if (baEl) bassEl.removeChild(baEl);
+  } else if (existingBass) {
+    harmonyEl.removeChild(existingBass);
+  }
+
+  return serializeXml(doc);
+}
+
+export function updateComposerInXml(xml: string, composer: string): string {
+  const doc = parseXml(xml);
+  const el = doc.querySelector("creator[type='composer']") ?? doc.querySelector("creator");
+  if (el) {
+    el.textContent = composer;
+    el.setAttribute("type", "composer");
+    return serializeXml(doc);
+  }
+  let identification = doc.getElementsByTagName("identification")[0];
+  if (!identification) {
+    identification = doc.createElement("identification");
+    const ref = doc.querySelector("movement-title") ?? doc.querySelector("work");
+    ref ? ref.parentNode?.insertBefore(identification, ref.nextSibling)
+        : doc.documentElement.insertBefore(identification, doc.documentElement.firstChild);
+  }
+  const creatorEl = doc.createElement("creator");
+  creatorEl.setAttribute("type", "composer");
+  creatorEl.textContent = composer;
+  identification.appendChild(creatorEl);
   return serializeXml(doc);
 }

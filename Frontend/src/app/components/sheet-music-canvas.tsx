@@ -1,9 +1,20 @@
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
 import { parseMusicXml, applyDiatonicStep } from "../lib/parse-musicxml";
-import type { ParsedNote } from "../lib/parse-musicxml";
+import type { ParsedNote, ParsedHarmony } from "../lib/parse-musicxml";
 
 const ACCENT = "#E8622A";
+
+// Regex to identify chord symbol text elements in OSMD's SVG output
+const CHORD_TEXT_RE = /^[A-G][#b]?(?:m(?:aj)?|dim|aug|sus[24]?|\+|ø|°)?(?:\d+)?(?:[#b]\d+)?(?:\/[A-G][#b]?)?$/;
+
+interface ChordHit {
+  harmony: ParsedHarmony;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 interface NoteHit {
   note: ParsedNote;
@@ -29,6 +40,107 @@ interface Props {
   selectedNotes: ParsedNote[];
   onNoteClick: (note: ParsedNote, shiftHeld: boolean) => void;
   onPitchCommit: (note: ParsedNote, step: string, octave: number) => void;
+  scoreTitle?: string;
+  scoreComposer?: string;
+  onTitleCommit?: (title: string) => void;
+  onComposerCommit?: (composer: string) => void;
+  harmonies?: ParsedHarmony[];
+  onChordClick?: (harmony: ParsedHarmony, clientX: number, clientY: number) => void;
+}
+
+function ScoreTextField({ value, placeholder, fontFamily, className, onCommit }: {
+  value: string;
+  placeholder: string;
+  fontFamily?: string;
+  className?: string;
+  onCommit?: (v: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  if (!onCommit) {
+    return <p className={className} style={{ fontFamily }}>{value || placeholder}</p>;
+  }
+  return editing ? (
+    <input
+      autoFocus
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        setEditing(false);
+        if (draft !== value) onCommit(draft);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") setEditing(false);
+        e.stopPropagation();
+      }}
+      className={`${className ?? ""} bg-[#F5F0E8]/80 border-b-2 border-[#1C1917] outline-none text-center px-2`}
+      style={{ fontFamily, minWidth: 200 }}
+    />
+  ) : (
+    <p
+      className={`${className ?? ""} cursor-text hover:bg-[#F5F0E8]/60 rounded px-2 inline-block transition-colors`}
+      style={{ fontFamily }}
+      onClick={() => { setDraft(value); setEditing(true); }}
+      title="Click to edit"
+    >
+      {value || <span className="opacity-30 italic">{placeholder}</span>}
+    </p>
+  );
+}
+
+function buildChordHits(container: HTMLElement, harmonies: ParsedHarmony[]): ChordHit[] {
+  if (!harmonies.length) return [];
+  const containerRect = container.getBoundingClientRect();
+  const CHORD_ROOT_START = /^[A-G][#b♯♭]?/;
+
+  // Strategy 1: VexFlow chord symbol groups (try several class-name variants)
+  let candidates: Element[] = [];
+  for (const sel of [".vf-ChordSymbol", ".vf-chordSymbol", ".vf-chord-symbol", "[class*='ChordSymbol']"]) {
+    try {
+      const found = Array.from(container.querySelectorAll(sel));
+      if (found.length > candidates.length) candidates = found;
+    } catch {}
+  }
+
+  // Strategy 2: text elements starting with a chord root letter → use immediate parent <g>
+  // This handles VexFlow rendering each component (root / quality / extension) as separate <text> nodes.
+  if (candidates.length < harmonies.length) {
+    const seen = new Set<Element>();
+    const groups: Element[] = [];
+    for (const text of container.querySelectorAll<SVGTextElement>("text")) {
+      const t = (text.textContent ?? "").trim();
+      if (!CHORD_ROOT_START.test(t) || t.length > 15) continue;
+      const p = text.parentElement;
+      const target: Element = (p && p.tagName.toLowerCase() === "g") ? p : text;
+      if (!seen.has(target)) { seen.add(target); groups.push(target); }
+    }
+    if (groups.length > candidates.length) candidates = groups;
+  }
+
+  // Strategy 3: text elements whose full content matches the chord pattern (single-node rendering)
+  if (candidates.length < harmonies.length) {
+    const textMatches = Array.from(container.querySelectorAll("text")).filter((el) => {
+      return CHORD_TEXT_RE.test((el.textContent ?? "").trim());
+    });
+    if (textMatches.length > candidates.length) candidates = textMatches;
+  }
+
+  const sorted = candidates
+    .map((el) => ({ el, r: el.getBoundingClientRect() }))
+    .filter(({ r }) => r.width > 0 && r.height > 0)
+    .sort((a, b) =>
+      Math.abs(a.r.top - b.r.top) > 15 ? a.r.top - b.r.top : a.r.left - b.r.left
+    );
+
+  const count = Math.min(sorted.length, harmonies.length);
+  return sorted.slice(0, count).map(({ r }, i) => ({
+    harmony: harmonies[i],
+    x: r.left + r.width / 2 - containerRect.left,
+    y: r.top + r.height / 2 - containerRect.top,
+    w: Math.max(r.width + 20, 40),
+    h: Math.max(r.height + 12, 24),
+  }));
 }
 
 function measureLineSpacing(container: HTMLElement): number {
@@ -266,7 +378,9 @@ function colorNote(noteheadEl: Element, color: string | null) {
 }
 
 export const SheetMusicCanvas = forwardRef<SheetMusicCanvasHandle, Props>(function SheetMusicCanvas(
-  { musicXml, selectedNotes, onNoteClick, onPitchCommit }: Props,
+  { musicXml, selectedNotes, onNoteClick, onPitchCommit,
+    scoreTitle, scoreComposer, onTitleCommit, onComposerCommit,
+    harmonies, onChordClick }: Props,
   ref
 ) {
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -278,6 +392,7 @@ export const SheetMusicCanvas = forwardRef<SheetMusicCanvasHandle, Props>(functi
     getOsmdDiv: () => osmdDivRef.current,
   }));
   const [noteHits, setNoteHits] = useState<NoteHit[]>([]);
+  const [chordHits, setChordHits] = useState<ChordHit[]>([]);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [containerH, setContainerH] = useState(0);
 
@@ -291,10 +406,13 @@ export const SheetMusicCanvas = forwardRef<SheetMusicCanvasHandle, Props>(functi
         buildHits(osmdDivRef.current, notes);
       setNoteHits(hits);
       setContainerH(osmdDivRef.current.scrollHeight);
+      if (harmonies?.length) {
+        setChordHits(buildChordHits(osmdDivRef.current, harmonies));
+      }
     } catch (e) {
       console.warn("Note hit build failed:", e);
     }
-  }, [musicXml]);
+  }, [musicXml, harmonies]);
 
   useEffect(() => {
     if (!osmdDivRef.current || !musicXml) return;
@@ -309,9 +427,9 @@ export const SheetMusicCanvas = forwardRef<SheetMusicCanvasHandle, Props>(functi
       const osmd = new OpenSheetMusicDisplay(osmdDivRef.current!, {
         autoResize: true,
         backend: "svg",
-        drawTitle: true,
-        drawComposer: true,
-        drawCredits: true,
+        drawTitle: false,
+        drawComposer: false,
+        drawCredits: false,
         drawPartNames: false,
         pageBackgroundColor: "#ffffff",
       } as any);
@@ -387,9 +505,29 @@ export const SheetMusicCanvas = forwardRef<SheetMusicCanvasHandle, Props>(functi
       onMouseLeave={commitDrag}
     >
       <div ref={wrapperRef} style={{ position: "relative" }}>
+        {/* Editable title / composer rendered above the score */}
+        {(scoreTitle !== undefined || scoreComposer !== undefined) && (
+          <div className="text-center pt-8 pb-3 px-8 bg-white">
+            <ScoreTextField
+              value={scoreTitle ?? ""}
+              placeholder="Untitled"
+              fontFamily="DM Serif Display, Georgia, serif"
+              className="text-2xl font-bold text-[#1C1917] block w-full"
+              onCommit={onTitleCommit}
+            />
+            {scoreComposer !== undefined && (
+              <ScoreTextField
+                value={scoreComposer}
+                placeholder="Composer"
+                className="text-sm text-[#1C1917]/60 mt-1 block w-full"
+                onCommit={onComposerCommit}
+              />
+            )}
+          </div>
+        )}
         <div ref={osmdDivRef} style={{ width: "100%", backgroundColor: "#fff" }} />
 
-        {noteHits.length > 0 && (
+        {(noteHits.length > 0 || chordHits.length > 0) && (
           <svg
             style={{
               position: "absolute",
@@ -401,6 +539,7 @@ export const SheetMusicCanvas = forwardRef<SheetMusicCanvasHandle, Props>(functi
               pointerEvents: "none",
             }}
           >
+            {/* Note hit ellipses rendered first so chord rects sit on top */}
             {noteHits.map((hit, i) => {
               const isSelected = selectedNotes.some(
                 (n) => n.measure === hit.note.measure && n.xmlIndex === hit.note.xmlIndex
@@ -412,10 +551,8 @@ export const SheetMusicCanvas = forwardRef<SheetMusicCanvasHandle, Props>(functi
               const displayY = isDragging
                 ? hit.y - dragSteps * (hit.lineSpacingPx / 2)
                 : hit.y;
-
               return (
                 <g key={i} style={{ pointerEvents: "all" }}>
-                  {/* Clickable hit area */}
                   <ellipse
                     cx={hit.x}
                     cy={hit.y}
@@ -444,7 +581,6 @@ export const SheetMusicCanvas = forwardRef<SheetMusicCanvasHandle, Props>(functi
                       }
                     }}
                   />
-                  {/* Drag pitch label */}
                   {isDragging && dragLabel && (
                     <text
                       x={hit.x + r + 8}
@@ -460,6 +596,22 @@ export const SheetMusicCanvas = forwardRef<SheetMusicCanvasHandle, Props>(functi
                 </g>
               );
             })}
+
+            {/* Chord symbol hit areas rendered on top of notes */}
+            {chordHits.map((hit, i) => (
+              <rect
+                key={`chord-${i}`}
+                x={hit.x - hit.w / 2}
+                y={hit.y - hit.h / 2}
+                width={hit.w}
+                height={hit.h}
+                fill="rgba(0,0,0,0)"
+                rx={3}
+                style={{ pointerEvents: "all", cursor: "text" }}
+                onClick={(e) => onChordClick?.(hit.harmony, e.clientX, e.clientY)}
+              />
+            ))}
+
           </svg>
         )}
       </div>

@@ -69,16 +69,18 @@ export function Navbar() {
           >
             Upload
           </Link>
-          <Link
-            to="/library"
-            className={`text-sm font-medium transition-colors hover:text-[#1C1917] ${
-              location.pathname === "/library"
-                ? "text-[#1C1917] font-semibold"
-                : "text-[#1C1917]/60"
-            }`}
-          >
-            Library
-          </Link>
+          {currentUser && (
+            <Link
+              to="/library"
+              className={`text-sm font-medium transition-colors hover:text-[#1C1917] ${
+                location.pathname === "/library"
+                  ? "text-[#1C1917] font-semibold"
+                  : "text-[#1C1917]/60"
+              }`}
+            >
+              Library
+            </Link>
+          )}
 
           {/* Auth */}
           {!loading && (

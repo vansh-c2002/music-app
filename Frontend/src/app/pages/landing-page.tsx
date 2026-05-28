@@ -229,7 +229,7 @@ export function LandingPage() {
                 {
                   num: "02",
                   title: "Upload to Oh Sheet!",
-                  desc: "Our AI reads every note instantly — PNG, JPG, or PDF",
+                  desc: "We scan every note on the page instantly — PNG, JPG, or PDF",
                   color: "#F2C4C4",
                   icon: Upload,
                 },

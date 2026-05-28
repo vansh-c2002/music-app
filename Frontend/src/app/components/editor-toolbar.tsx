@@ -81,7 +81,7 @@ export function EditorToolbar({
 
         <div className="w-px h-6 bg-border mx-2" />
 
-        {/* AI Fix Button */}
+        {/* Fix Notes Button */}
         <button
           onClick={onAIFix}
           className="px-4 py-2 bg-gradient-to-r from-accent to-accent/80 text-accent-foreground rounded-lg hover:opacity-90 transition-all flex items-center gap-2 shadow-md"

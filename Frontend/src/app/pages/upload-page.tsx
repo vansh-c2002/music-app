@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Upload, FileMusic, AlertCircle, LogIn, Camera, GripVertical, ZoomIn, X } from "lucide-react";
+import { Upload, FileMusic, AlertCircle, LogIn, Camera, GripVertical, ZoomIn, X, Crop } from "lucide-react";
 import { useNavigate } from "react-router";
 import { Navbar } from "../components/navbar";
 import { motion } from "motion/react";
@@ -25,10 +25,15 @@ export function UploadPage() {
   const [orderPreviewUrls, setOrderPreviewUrls] = useState<string[]>([]);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [cropMode, setCropMode] = useState(false);
+  const [cropStart, setCropStart] = useState<{ x: number; y: number } | null>(null);
+  const [cropEnd, setCropEnd] = useState<{ x: number; y: number } | null>(null);
   const pendingFile = useRef<File[]>([]);
   const pendingScoreType = useRef<"classical" | "jazz">("classical");
   const fileDragIndex = useRef<number | null>(null);
+  const cropImgRef = useRef<HTMLImageElement>(null);
+  const cropDragging = useRef(false);
   const navigate = useNavigate();
   const [showCamera, setShowCamera] = useState(false);
   const { currentUser, signInWithGoogle } = useAuth();
@@ -42,11 +47,13 @@ export function UploadPage() {
   }, []);
 
   useEffect(() => {
-    if (!lightboxUrl) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") setLightboxUrl(null); };
+    if (lightboxIndex === null) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { setLightboxIndex(null); setCropMode(false); setCropStart(null); setCropEnd(null); }
+    };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [lightboxUrl]);
+  }, [lightboxIndex]);
 
   useEffect(() => {
     if (!showAd) return;
@@ -182,6 +189,67 @@ export function UploadPage() {
     fileDragIndex.current = null;
     setDragOverIndex(null);
     setDraggingIndex(null);
+  };
+
+  const handleCropMouseDown = (e: React.MouseEvent<HTMLImageElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setCropStart({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    setCropEnd(null);
+    cropDragging.current = true;
+  };
+
+  const handleCropMouseMove = (e: React.MouseEvent<HTMLImageElement>) => {
+    if (!cropDragging.current) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    setCropEnd({
+      x: Math.max(0, Math.min(e.clientX - rect.left, rect.width)),
+      y: Math.max(0, Math.min(e.clientY - rect.top, rect.height)),
+    });
+  };
+
+  const handleCropMouseUp = (e: React.MouseEvent<HTMLImageElement>) => {
+    if (!cropDragging.current) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    setCropEnd({
+      x: Math.max(0, Math.min(e.clientX - rect.left, rect.width)),
+      y: Math.max(0, Math.min(e.clientY - rect.top, rect.height)),
+    });
+    cropDragging.current = false;
+  };
+
+  const applyCrop = () => {
+    if (!cropStart || !cropEnd || !cropImgRef.current || lightboxIndex === null) return;
+    const img = cropImgRef.current;
+    const rect = img.getBoundingClientRect();
+    const scaleX = img.naturalWidth / rect.width;
+    const scaleY = img.naturalHeight / rect.height;
+    const x = Math.round(Math.min(cropStart.x, cropEnd.x) * scaleX);
+    const y = Math.round(Math.min(cropStart.y, cropEnd.y) * scaleY);
+    const w = Math.round(Math.abs(cropEnd.x - cropStart.x) * scaleX);
+    const h = Math.round(Math.abs(cropEnd.y - cropStart.y) * scaleY);
+    if (w < 10 || h < 10) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(img, x, y, w, h, 0, 0, w, h);
+    const idx = lightboxIndex;
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const newFile = new File([blob], orderedFiles[idx].name, { type: "image/png" });
+      const newUrl = URL.createObjectURL(newFile);
+      const newFiles = [...orderedFiles];
+      const newUrls = [...orderPreviewUrls];
+      if (newUrls[idx]) URL.revokeObjectURL(newUrls[idx]);
+      newFiles[idx] = newFile;
+      newUrls[idx] = newUrl;
+      setOrderedFiles(newFiles);
+      setOrderPreviewUrls(newUrls);
+      setLightboxIndex(idx);
+      setCropMode(false);
+      setCropStart(null);
+      setCropEnd(null);
+    }, "image/png");
   };
 
   const runUpload = async (files: File[], scoreType: "classical" | "jazz") => {
@@ -345,7 +413,7 @@ export function UploadPage() {
                         </span>
                         {orderPreviewUrls[i] ? (
                           <button
-                            onClick={(e) => { e.stopPropagation(); setLightboxUrl(orderPreviewUrls[i]); }}
+                            onClick={(e) => { e.stopPropagation(); setLightboxIndex(i); setCropMode(false); setCropStart(null); setCropEnd(null); }}
                             className="relative group flex-shrink-0 cursor-zoom-in"
                             draggable={false}
                           >
@@ -682,6 +750,32 @@ export function UploadPage() {
             </div>
           </motion.div>
 
+          {/* Load MusicXML shortcut */}
+          {!processing && !error && !showOrderReview && !showTypePicker && (
+            <div className="text-center -mt-6 mb-6">
+              <label className="inline-flex items-center gap-1.5 text-sm text-[#1C1917]/40 hover:text-[#1C1917]/70 transition-colors cursor-pointer">
+                <FileMusic className="w-3.5 h-3.5" />
+                or open a .musicxml file directly
+                <input
+                  type="file"
+                  accept=".musicxml,.xml"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                      const xml = ev.target?.result as string;
+                      if (xml) navigate("/editor", { state: { musicXml: xml, fileName: file.name } });
+                    };
+                    reader.readAsText(file);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
+          )}
+
           {/* Tips Panel */}
           {!processing && !error && (
             <motion.div
@@ -738,23 +832,78 @@ export function UploadPage() {
         />
       )}
 
-      {lightboxUrl && (
+      {lightboxIndex !== null && orderPreviewUrls[lightboxIndex] && (
         <div
           className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6"
-          onClick={() => setLightboxUrl(null)}
+          onClick={() => { if (!cropMode) { setLightboxIndex(null); } }}
         >
           <button
             className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
-            onClick={() => setLightboxUrl(null)}
+            onClick={(e) => { e.stopPropagation(); setLightboxIndex(null); setCropMode(false); setCropStart(null); setCropEnd(null); }}
           >
             <X className="w-5 h-5 text-white" />
           </button>
-          <img
-            src={lightboxUrl}
-            alt="Page preview"
-            className="max-w-full max-h-full object-contain rounded-xl shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          />
+
+          {cropMode ? (
+            <div className="flex flex-col items-center gap-4" onClick={(e) => e.stopPropagation()}>
+              <p className="text-white/70 text-sm">Drag to select crop area</p>
+              <div className="relative inline-block select-none">
+                <img
+                  ref={cropImgRef}
+                  src={orderPreviewUrls[lightboxIndex]}
+                  alt="Crop preview"
+                  style={{ display: "block", maxWidth: "80vw", maxHeight: "65vh" }}
+                  draggable={false}
+                  onMouseDown={handleCropMouseDown}
+                  onMouseMove={handleCropMouseMove}
+                  onMouseUp={handleCropMouseUp}
+                  className="rounded-xl cursor-crosshair"
+                />
+                {cropStart && cropEnd && (
+                  <div
+                    className="absolute border-2 border-[#7FFFD4] pointer-events-none"
+                    style={{
+                      left: Math.min(cropStart.x, cropEnd.x),
+                      top: Math.min(cropStart.y, cropEnd.y),
+                      width: Math.abs(cropEnd.x - cropStart.x),
+                      height: Math.abs(cropEnd.y - cropStart.y),
+                      boxShadow: "0 0 0 9999px rgba(0,0,0,0.5)",
+                    }}
+                  />
+                )}
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setCropMode(false); setCropStart(null); setCropEnd(null); }}
+                  className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={applyCrop}
+                  disabled={!cropStart || !cropEnd}
+                  className="px-4 py-2 bg-[#7FFFD4] text-[#1C1917] font-medium rounded-lg disabled:opacity-40 hover:bg-[#6FEFC4] transition-colors"
+                >
+                  Apply Crop
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-4" onClick={(e) => e.stopPropagation()}>
+              <img
+                src={orderPreviewUrls[lightboxIndex]}
+                alt="Page preview"
+                className="max-w-full max-h-[75vh] object-contain rounded-xl shadow-2xl"
+              />
+              <button
+                onClick={() => { setCropMode(true); setCropStart(null); setCropEnd(null); }}
+                className="flex items-center gap-2 px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-full transition-colors"
+              >
+                <Crop className="w-4 h-4" />
+                Crop Image
+              </button>
+            </div>
+          )}
         </div>
       )}
     </>
