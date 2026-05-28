@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { ArrowLeft, Download, FileDown, RotateCcw, RotateCw, ChevronLeft, ChevronRight, BookmarkPlus, Loader2, Play, Pause } from "lucide-react";
+import { ArrowLeft, Download, FileDown, RotateCcw, RotateCw, ChevronLeft, ChevronRight, BookmarkPlus, Loader2, Play, Pause, Square, RefreshCw } from "lucide-react";
 import { ScorePlayer } from "../lib/play-score";
 import { Link, useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
@@ -17,12 +17,15 @@ import {
   addChordNote,
   parseHarmonies,
   updateHarmony,
+  validateChordLabel,
   updateComposerInXml,
 } from "../lib/parse-musicxml";
 import type { ParsedNote, ScoreInfo, ParsedHarmony } from "../lib/parse-musicxml";
 import { useAuth } from "../lib/auth-context";
 import { generateThumbnail } from "../lib/generate-thumbnail";
 import { saveScore } from "../lib/save-score";
+import { getPendingUpload, setPendingUpload } from "../lib/pending-upload-store";
+import { saveAbFeedback } from "../lib/save-ab-feedback";
 
 function updateTitleInXml(xml: string, title: string): string {
   const escaped = title.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -45,8 +48,9 @@ function parseScore(xml: string): { notes: ParsedNote[]; info: ScoreInfo | null 
 export function EditorPage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { musicXml: initialXml, fileName } =
-    (location.state as { musicXml: string; fileName: string }) ?? {};
+  const { musicXml: initialXml, fileName, scoreType, sessionId } =
+    (location.state as { musicXml: string; fileName: string; scoreType?: string; sessionId?: string }) ?? {};
+  const isClassical = scoreType === "classical";
   const { currentUser } = useAuth();
   const canvasRef = useRef<SheetMusicCanvasHandle>(null);
   const playerRef = useRef<ScorePlayer | null>(null);
@@ -60,9 +64,19 @@ export function EditorPage() {
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState<string | null>(null);
 
+  const [homrXml, setHomrXml] = useState<string | null>(null);
+  const [homrHistory, setHomrHistory] = useState<string[]>([]);
+  const [homrHistIdx, setHomrHistIdx] = useState(-1);
+  const [currentModel, setCurrentModel] = useState<"legato" | "homr">("legato");
+  const [isLoadingAlt, setIsLoadingAlt] = useState(false);
+  const [showAbModal, setShowAbModal] = useState(false);
+  const [abFeedbackDone, setAbFeedbackDone] = useState(false);
+
   const [history, setHistory] = useState<string[]>([]);
   const [histIdx, setHistIdx] = useState(-1);
-  const currentXml = history[histIdx] ?? "";
+  const currentXml = currentModel === "legato"
+    ? (history[histIdx] ?? "")
+    : (homrHistory[homrHistIdx] ?? "");
 
   const [cursorStep, setCursorStep] = useState(0);
   const [extraSelected, setExtraSelected] = useState<number[]>([]);
@@ -142,8 +156,13 @@ export function EditorPage() {
   }, [cursorNote, cursorStep, extraSelected, cursorNotes, histIdx, history, moveNext, movePrev]);
 
   const pushXml = (newXml: string) => {
-    setHistory((prev) => [...prev.slice(0, histIdx + 1), newXml]);
-    setHistIdx((i) => i + 1);
+    if (currentModel === "legato") {
+      setHistory((prev) => [...prev.slice(0, histIdx + 1), newXml]);
+      setHistIdx((i) => i + 1);
+    } else {
+      setHomrHistory((prev) => [...prev.slice(0, homrHistIdx + 1), newXml]);
+      setHomrHistIdx((i) => i + 1);
+    }
   };
 
   const changePitchMulti = (notes: ParsedNote[], delta: number) => {
@@ -160,13 +179,23 @@ export function EditorPage() {
   };
 
   const handleUndo = () => {
-    if (histIdx <= 0) return;
-    setHistIdx((i) => i - 1);
+    if (currentModel === "legato") {
+      if (histIdx <= 0) return;
+      setHistIdx((i) => i - 1);
+    } else {
+      if (homrHistIdx <= 0) return;
+      setHomrHistIdx((i) => i - 1);
+    }
   };
 
   const handleRedo = () => {
-    if (histIdx >= history.length - 1) return;
-    setHistIdx((i) => i + 1);
+    if (currentModel === "legato") {
+      if (histIdx >= history.length - 1) return;
+      setHistIdx((i) => i + 1);
+    } else {
+      if (homrHistIdx >= homrHistory.length - 1) return;
+      setHomrHistIdx((i) => i + 1);
+    }
   };
 
   const handleNoteClick = useCallback((note: ParsedNote, shiftHeld: boolean) => {
@@ -264,11 +293,8 @@ export function EditorPage() {
     pushXml(transposeScore(currentXml, semitones));
   };
 
-  const handleSaveToLibrary = async () => {
-    if (!currentUser) {
-      toast.error("Sign in to save to your library");
-      return;
-    }
+  const performSave = async () => {
+    if (!currentUser) return;
     setSaving(true);
     try {
       const thumbnailDataUrl = await generateThumbnail(canvasRef.current?.getOsmdDiv() ?? null);
@@ -279,6 +305,55 @@ export function EditorPage() {
       toast.error("Failed to save to library");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveToLibrary = async () => {
+    if (!currentUser) {
+      toast.error("Sign in to save to your library");
+      return;
+    }
+    if (isClassical && homrXml !== null && !abFeedbackDone) {
+      setShowAbModal(true);
+      return;
+    }
+    await performSave();
+  };
+
+  const handleLoadAlternative = async () => {
+    const pending = getPendingUpload();
+    if (!pending || !currentUser) {
+      toast.error("Source files no longer available — please re-upload to try the alternative.");
+      return;
+    }
+    setIsLoadingAlt(true);
+    try {
+      const formData = new FormData();
+      pending.files.forEach((f) => formData.append("files", f));
+      formData.append("score_type", "classical");
+      formData.append("model", "homr");
+      const idToken = await currentUser.getIdToken();
+      const apiUrl = import.meta.env.VITE_API_URL;
+      if (!apiUrl) throw new Error("API URL not configured");
+      const response = await fetch(`${apiUrl}/transcribe-multi`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${idToken}` },
+        body: formData,
+      });
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(detail || `Server error: ${response.status}`);
+      }
+      const xml = await response.text();
+      setHomrXml(xml);
+      setHomrHistory([xml]);
+      setHomrHistIdx(0);
+      setCurrentModel("homr");
+      setPendingUpload(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to load alternative model");
+    } finally {
+      setIsLoadingAlt(false);
     }
   };
 
@@ -400,7 +475,7 @@ export function EditorPage() {
           {/* Undo */}
           <button
             onClick={handleUndo}
-            disabled={histIdx <= 0}
+            disabled={currentModel === "legato" ? histIdx <= 0 : homrHistIdx <= 0}
             className="p-2 rounded-lg border-2 border-[#1C1917] bg-white hover:bg-[#F5F0E8] disabled:opacity-30 transition-all shadow-[2px_2px_0_#1C1917] hover:shadow-[3px_3px_0_#1C1917] disabled:shadow-none"
             title="Undo (Ctrl+Z)"
           >
@@ -410,7 +485,7 @@ export function EditorPage() {
           {/* Redo */}
           <button
             onClick={handleRedo}
-            disabled={histIdx >= history.length - 1}
+            disabled={currentModel === "legato" ? histIdx >= history.length - 1 : homrHistIdx >= homrHistory.length - 1}
             className="p-2 rounded-lg border-2 border-[#1C1917] bg-white hover:bg-[#F5F0E8] disabled:opacity-30 transition-all shadow-[2px_2px_0_#1C1917] hover:shadow-[3px_3px_0_#1C1917] disabled:shadow-none"
             title="Redo (Ctrl+Y)"
           >
@@ -536,6 +611,51 @@ export function EditorPage() {
               </button>
             ))}
           </div>
+
+          {isClassical && (
+            <>
+              <div className="w-px h-4 bg-[#1C1917]/20" />
+              {homrXml === null ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-[#1C1917]/40 hidden sm:inline">Unhappy?</span>
+                  <button
+                    onClick={handleLoadAlternative}
+                    disabled={isLoadingAlt}
+                    className="flex items-center gap-1 text-xs font-medium text-[#1C1917]/70 hover:text-[#1C1917] disabled:opacity-50 transition-colors underline underline-offset-2"
+                  >
+                    {isLoadingAlt
+                      ? <Loader2 className="w-3 h-3 animate-spin" />
+                      : <RefreshCw className="w-3 h-3" />}
+                    {isLoadingAlt ? "Loading..." : "Try alternative model"}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex rounded-lg overflow-hidden border-2 border-[#1C1917] shadow-[2px_2px_0_#1C1917]">
+                  <button
+                    onClick={() => setCurrentModel("legato")}
+                    className={`px-3 py-1 text-xs font-medium transition-colors ${
+                      currentModel === "legato"
+                        ? "bg-[#F2C4C4] text-[#1C1917]"
+                        : "bg-white text-[#1C1917]/50 hover:text-[#1C1917]"
+                    }`}
+                  >
+                    A — Legato
+                  </button>
+                  <div className="w-px bg-[#1C1917]" />
+                  <button
+                    onClick={() => setCurrentModel("homr")}
+                    className={`px-3 py-1 text-xs font-medium transition-colors ${
+                      currentModel === "homr"
+                        ? "bg-[#B8D8E8] text-[#1C1917]"
+                        : "bg-white text-[#1C1917]/50 hover:text-[#1C1917]"
+                    }`}
+                  >
+                    B — HOMR
+                  </button>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
 
@@ -586,8 +706,14 @@ export function EditorPage() {
             value={chordPopup.value}
             onChange={(e) => setChordPopup((p) => p ? { ...p, value: e.target.value } : null)}
             onBlur={() => {
-              if (chordPopup.value.trim())
-                pushXml(updateHarmony(currentXml, chordPopup.harmony.index, chordPopup.value.trim()));
+              const v = chordPopup.value.trim();
+              if (v) {
+                if (!validateChordLabel(v)) {
+                  toast.error(`Unrecognized chord "${v}" — try e.g. Cmaj7, Dm7, Gsus4`);
+                } else {
+                  pushXml(updateHarmony(currentXml, chordPopup.harmony.index, v));
+                }
+              }
               setChordPopup(null);
             }}
             onKeyDown={(e) => {
@@ -598,6 +724,62 @@ export function EditorPage() {
             className="text-sm font-mono font-medium text-[#1C1917] border-none outline-none bg-transparent w-20"
             placeholder={chordPopup.harmony.label}
           />
+        </div>
+      )}
+
+      {showAbModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1C1917]/50">
+          <div className="bg-white border-2 border-[#1C1917] rounded-2xl shadow-[8px_8px_0_#1C1917] p-8 max-w-md w-full mx-4">
+            <h2
+              className="text-2xl font-serif font-bold text-[#1C1917] mb-2"
+              style={{ fontFamily: "DM Serif Display, Georgia, serif" }}
+            >
+              Wanna help us better serve you?
+            </h2>
+            <p className="text-[#1C1917]/60 text-sm mb-6">
+              Which transcription did you prefer?
+            </p>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <button
+                onClick={async () => {
+                  try {
+                    const idToken = await currentUser!.getIdToken();
+                    await saveAbFeedback("legato", sessionId ?? "", fileName ?? "", idToken);
+                  } catch {}
+                  setAbFeedbackDone(true);
+                  setShowAbModal(false);
+                  await performSave();
+                }}
+                className="py-3 px-4 rounded-xl border-2 border-[#1C1917] bg-[#F2C4C4] hover:bg-[#e8b0b0] font-medium text-[#1C1917] transition-all shadow-[3px_3px_0_#1C1917] hover:shadow-[4px_4px_0_#1C1917] text-sm"
+              >
+                Model A — Legato
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const idToken = await currentUser!.getIdToken();
+                    await saveAbFeedback("homr", sessionId ?? "", fileName ?? "", idToken);
+                  } catch {}
+                  setAbFeedbackDone(true);
+                  setShowAbModal(false);
+                  await performSave();
+                }}
+                className="py-3 px-4 rounded-xl border-2 border-[#1C1917] bg-[#B8D8E8] hover:bg-[#a4c8d8] font-medium text-[#1C1917] transition-all shadow-[3px_3px_0_#1C1917] hover:shadow-[4px_4px_0_#1C1917] text-sm"
+              >
+                Model B — HOMR
+              </button>
+            </div>
+            <button
+              onClick={async () => {
+                setAbFeedbackDone(true);
+                setShowAbModal(false);
+                await performSave();
+              }}
+              className="w-full text-sm text-[#1C1917]/50 hover:text-[#1C1917] transition-colors py-2"
+            >
+              Skip →
+            </button>
+          </div>
         </div>
       )}
 

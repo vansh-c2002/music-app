@@ -6,7 +6,7 @@ import type { ParsedNote, ParsedHarmony } from "../lib/parse-musicxml";
 const ACCENT = "#E8622A";
 
 // Regex to identify chord symbol text elements in OSMD's SVG output
-const CHORD_TEXT_RE = /^[A-G][#b]?(?:m(?:aj)?|dim|aug|sus[24]?|\+|ø|°)?(?:\d+)?(?:[#b]\d+)?(?:\/[A-G][#b]?)?$/;
+const CHORD_TEXT_RE = /^[A-G][#b]?(?:mMaj|m(?:aj)?|maj|dim|aug|sus[24]?|[+ø°])?(?:\d+)?(?:[#b]\d+|add\d+|no[135])*(?:\/[A-G][#b]?)?$/;
 
 interface ChordHit {
   harmony: ParsedHarmony;
@@ -192,11 +192,10 @@ function staffBoundaryYs(container: HTMLElement, lineSpacingPx: number): number[
   return boundaries;
 }
 
-// OSMD's Pitch.halfTone = (octave+1)*12 + semitones_from_C + accidental = MIDI number.
-// Same formula as play-score.ts noteToFrequency — used for pitch-based note matching.
-const SEMI_FROM_C: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
-function noteMidi(n: ParsedNote): number {
-  return (n.octave + 1) * 12 + (SEMI_FROM_C[n.step] ?? 0) + Math.round(n.alter);
+// Compute absolute halftone from a ParsedNote (C4 = 60)
+function parsedHalfTone(n: ParsedNote): number {
+  const s: Record<string, number> = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 };
+  return (n.octave + 1) * 12 + (s[n.step] ?? 0) + Math.round(n.alter);
 }
 
 function buildHitsFromOsmd(
@@ -227,8 +226,8 @@ function buildHitsFromOsmd(
         const gMeasure = staffLines[s];
         if (!gMeasure?.staffEntries) continue;
         const candidates = byKey.get(`${m}_${s}`) ?? [];
-        const usedIds = new Set<number>();
-        let fallbackPos = 0;
+        // Track which candidates have been claimed this measure+staff
+        const used = new Set<number>();
 
         for (const se of gMeasure.staffEntries) {
           for (const ve of se.graphicalVoiceEntries ?? []) {
@@ -239,7 +238,7 @@ function buildHitsFromOsmd(
                 (gn.getSVGGElement?.() as Element | null) ??
                 (() => {
                   const vfn = gn.vfnote?.[0] ?? gn.vfNote?.[0];
-                  return (vfn?.attrs?.el ?? vfn?.getSVGElement?.() ?? vfn?.elem ?? null) as Element | null;
+                  return (vfn?.attrs?.el ?? vfn?.getSVGElement?.() ?? vfn?.elem ?? vfn?.note_heads?.[0]?.attrs?.el ?? null) as Element | null;
                 })();
               if (!groupEl) continue;
 
@@ -250,29 +249,53 @@ function buildHitsFromOsmd(
                 groupEl.querySelector(".vf-notehead, .vf-note-head, [class*='notehead']") ??
                 groupEl;
               const r = nhEl.getBoundingClientRect();
-
-              // --- Pitch-based matching ---
-              let note: ParsedNote | undefined;
-              const halfTone: number | undefined = gn.sourceNote?.pitch?.halfTone;
-              if (halfTone != null && !isNaN(halfTone)) {
-                note = candidates.find(
-                  (c) => !c.isRest && !usedIds.has(c.id) && noteMidi(c) === halfTone
-                );
-              }
-              // Positional fallback for rests / grace notes / missing pitch data.
-              if (!note) {
-                while (fallbackPos < candidates.length && usedIds.has(candidates[fallbackPos].id))
-                  fallbackPos++;
-                note = candidates[fallbackPos++];
-              }
-              if (!note) continue;
-              usedIds.add(note.id);
-
-              // Zero-bounds = invisible note (e.g. second half of a tie): consume slot but skip hit.
+              // Invisible note (e.g. second half of a tie) — no hit to register.
               if (r.width === 0 && r.height === 0) continue;
 
+              // --- Pitch-based matching ---
+              // OSMD iterates beat-by-beat (all voices per beat), but parseMusicXml
+              // emits notes in XML document order (voice 1 all beats, then voice 2
+              // all beats). Sequential idx++ drifts on any multi-voice score.
+              // Matching by halfTone pitch is order-independent and handles chords.
+              const src = gn.sourceNote;
+              const pitch = src?.Pitch ?? src?.pitch;
+              const ht: number | null =
+                typeof pitch?.halfTone === "number" ? pitch.halfTone : null;
+              const isOsmdRest = !!(src?.isRest?.() ?? src?.IsRest ?? false);
+
+              let matchIdx = -1;
+
+              // 1) Prefer exact pitch match for non-rest notes
+              if (!isOsmdRest && ht !== null) {
+                for (let ci = 0; ci < candidates.length; ci++) {
+                  if (!used.has(ci) && !candidates[ci].isRest
+                      && parsedHalfTone(candidates[ci]) === ht) {
+                    matchIdx = ci; break;
+                  }
+                }
+              }
+
+              // 2) Fallback: first unused with matching rest-ness
+              if (matchIdx === -1) {
+                for (let ci = 0; ci < candidates.length; ci++) {
+                  if (!used.has(ci) && candidates[ci].isRest === isOsmdRest) {
+                    matchIdx = ci; break;
+                  }
+                }
+              }
+
+              // 3) Last resort: any unused candidate
+              if (matchIdx === -1) {
+                for (let ci = 0; ci < candidates.length; ci++) {
+                  if (!used.has(ci)) { matchIdx = ci; break; }
+                }
+              }
+
+              if (matchIdx === -1) continue;
+              used.add(matchIdx);
+
               hits.push({
-                note,
+                note: candidates[matchIdx],
                 x: r.left + r.width / 2 - containerRect.left,
                 y: r.top + r.height / 2 - containerRect.top,
                 lineSpacingPx,
@@ -317,7 +340,7 @@ function buildHits(container: HTMLElement, parsedNotes: ParsedNote[]): NoteHit[]
       const rb = Math.floor((b.cy - containerRect.top) / rowHeight);
       if (ra !== rb) return ra - rb;
       if (Math.abs(a.cx - b.cx) > 2) return a.cx - b.cx;
-      return a.cy - b.cy; // same column (chord): top note first
+      return b.cy - a.cy; // same column (chord): low pitch first = ascending XML order
     });
 
   if (numStaves === 1) {

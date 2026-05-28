@@ -471,26 +471,79 @@ const KIND_TO_LABEL: Record<string, string> = {
   "major": "", "minor": "m", "dominant": "7",
   "major-seventh": "maj7", "minor-seventh": "m7",
   "diminished": "dim", "augmented": "+", "half-diminished": "m7b5",
-  "diminished-seventh": "dim7", "major-sixth": "6", "minor-sixth": "m6",
+  "diminished-seventh": "dim7", "augmented-seventh": "+7",
+  "major-sixth": "6", "minor-sixth": "m6",
   "suspended-fourth": "sus4", "suspended-second": "sus2",
   "dominant-ninth": "9", "major-ninth": "maj9", "minor-ninth": "m9",
+  "dominant-eleventh": "11", "major-eleventh": "maj11", "minor-eleventh": "m11",
+  "dominant-thirteenth": "13", "major-thirteenth": "maj13", "minor-thirteenth": "m13",
+  "major-minor": "mMaj7",
 };
 
-const LABEL_TO_KIND: Record<string, string> = {
-  "": "major", "M": "major", "maj": "major",
-  "m": "minor", "min": "minor",
-  "7": "dominant",
-  "maj7": "major-seventh", "M7": "major-seventh", "Δ": "major-seventh", "Δ7": "major-seventh",
-  "m7": "minor-seventh", "min7": "minor-seventh",
-  "dim": "diminished", "°": "diminished",
-  "+": "augmented", "aug": "augmented",
-  "m7b5": "half-diminished", "ø": "half-diminished", "ø7": "half-diminished",
-  "dim7": "diminished-seventh", "°7": "diminished-seventh",
-  "6": "major-sixth", "m6": "minor-sixth",
-  "sus4": "suspended-fourth", "sus": "suspended-fourth",
-  "sus2": "suspended-second",
-  "9": "dominant-ninth", "maj9": "major-ninth", "m9": "minor-ninth",
-};
+// Grammar-based chord suffix parser — no exhaustive lookup table needed.
+// Handles quality (m/maj/dim/aug/ø/sus), extension (6/7/9/11/13), and
+// alterations/additions/omissions (b9, #11, add9, no5…) via MusicXML <degree>.
+type DegreeEntry = { value: number; alter: number; type: string };
+
+function parseSuffix(suffix: string): { kind: string; degrees: DegreeEntry[] } | null {
+  let s = suffix;
+  type Quality = "default" | "minor" | "major" | "dim" | "aug" | "halfDim" | "sus2" | "sus4";
+  let quality: Quality = "default";
+  let minorMaj = false;
+
+  if (/^m[Mm]aj?/.test(s))       { quality = "minor"; minorMaj = true; s = s.replace(/^m[Mm]aj?/, ""); }
+  else if (s.startsWith("min"))   { quality = "minor"; s = s.slice(3); }
+  else if (s.startsWith("maj") || s.startsWith("Maj")) { quality = "major"; s = s.slice(3); }
+  else if (s.startsWith("Δ"))    { quality = "major"; s = s.slice(1); }
+  else if (s.startsWith("M"))    { quality = "major"; s = s.slice(1); }
+  else if (s.startsWith("dim") || s.startsWith("°")) { quality = "dim"; s = s.slice(s.startsWith("°") ? 1 : 3); }
+  else if (s.startsWith("aug") || s.startsWith("+")) { quality = "aug"; s = s.slice(s.startsWith("+") ? 1 : 3); }
+  else if (s.startsWith("ø") || s.startsWith("∅"))  { quality = "halfDim"; s = s.slice(1); }
+  else if (s.startsWith("m"))    { quality = "minor"; s = s.slice(1); }
+
+  if (s.startsWith("sus2"))      { quality = "sus2"; s = s.slice(4); }
+  else if (s.startsWith("sus4") || s.startsWith("sus")) { quality = "sus4"; s = s.slice(s.startsWith("sus4") ? 4 : 3); }
+
+  let ext = 0;
+  const extM = s.match(/^(13|11|9|7|6)/);
+  if (extM) { ext = parseInt(extM[1]); s = s.slice(extM[1].length); }
+
+  s = s.replace(/[()]/g, "");
+  const degrees: DegreeEntry[] = [];
+  const degRe = /([b♭])(1[0-3]|[2-9])|([#♯])(1[0-3]|[2-9])|(add)(1[0-3]|[2-9])|(no)([135])/g;
+  const covered: boolean[] = new Array(s.length).fill(false);
+  let dm: RegExpExecArray | null;
+  while ((dm = degRe.exec(s)) !== null) {
+    for (let i = dm.index; i < dm.index + dm[0].length; i++) covered[i] = true;
+    if (dm[1])      degrees.push({ value: parseInt(dm[2]),  alter: -1, type: "add" });
+    else if (dm[3]) degrees.push({ value: parseInt(dm[4]),  alter:  1, type: "add" });
+    else if (dm[5]) degrees.push({ value: parseInt(dm[6]),  alter:  0, type: "add" });
+    else            degrees.push({ value: parseInt(dm[8]),  alter:  0, type: "subtract" });
+  }
+  const remaining = s.split("").filter((_, i) => !covered[i]).join("").trim();
+  if (remaining.length > 0) return null;
+
+  let kind: string;
+  if (quality === "sus2")    kind = "suspended-second";
+  else if (quality === "sus4")    kind = "suspended-fourth";
+  else if (quality === "halfDim") kind = "half-diminished";
+  else if (quality === "dim")     kind = ext === 7 ? "diminished-seventh" : "diminished";
+  else if (quality === "aug")     kind = ext === 7 ? "augmented-seventh"  : "augmented";
+  else if (quality === "minor") {
+    if (minorMaj) kind = "major-minor";
+    else {
+      const m: Record<number, string> = { 13: "minor-thirteenth", 11: "minor-eleventh", 9: "minor-ninth", 7: "minor-seventh", 6: "minor-sixth" };
+      kind = m[ext] ?? "minor";
+    }
+  } else if (quality === "major") {
+    const m: Record<number, string> = { 13: "major-thirteenth", 11: "major-eleventh", 9: "major-ninth", 7: "major-seventh" };
+    kind = m[ext] ?? "major";
+  } else {
+    const m: Record<number, string> = { 13: "dominant-thirteenth", 11: "dominant-eleventh", 9: "dominant-ninth", 7: "dominant", 6: "major-sixth" };
+    kind = m[ext] ?? "major";
+  }
+  return { kind, degrees };
+}
 
 export interface ParsedHarmony {
   index: number;    // 0-based document order among all <harmony> elements
@@ -521,7 +574,17 @@ export function parseHarmonies(xml: string): ParsedHarmony[] {
         const bassAlter = parseFloat(bassEl?.getElementsByTagName("bass-alter")[0]?.textContent ?? "0");
         const alterSym = alter === 1 ? "#" : alter === -1 ? "b" : "";
         const bassStr = bass ? `/${bass}${bassAlter === 1 ? "#" : bassAlter === -1 ? "b" : ""}` : "";
-        const label = `${root}${alterSym}${KIND_TO_LABEL[kind] ?? kind}${bassStr}`;
+        let degreeStr = "";
+        for (const degEl of Array.from(child.getElementsByTagName("degree"))) {
+          const val  = degEl.getElementsByTagName("degree-value")[0]?.textContent?.trim() ?? "";
+          const alt  = parseFloat(degEl.getElementsByTagName("degree-alter")[0]?.textContent ?? "0");
+          const type = degEl.getElementsByTagName("degree-type")[0]?.textContent?.trim() ?? "add";
+          if (type === "subtract")  degreeStr += `no${val}`;
+          else if (alt < 0)         degreeStr += `b${val}`;
+          else if (alt > 0)         degreeStr += `#${val}`;
+          else                      degreeStr += `add${val}`;
+        }
+        const label = `${root}${alterSym}${KIND_TO_LABEL[kind] ?? kind}${degreeStr}${bassStr}`;
         result.push({ index: idx++, measure: globalMeasure, label, root, alter, kind, bass, bassAlter });
       }
       globalMeasure++;
@@ -531,17 +594,35 @@ export function parseHarmonies(xml: string): ParsedHarmony[] {
   return result;
 }
 
-function parseChordLabel(label: string): { root: string; alter: number; kind: string; bass: string | null; bassAlter: number } | null {
-  const m = label.trim().match(/^([A-G])([#♯b♭]?)(.*?)(?:\/([A-G])([#♯b♭]?))?$/);
+function parseChordLabel(label: string): { root: string; alter: number; kind: string; degrees: DegreeEntry[]; bass: string | null; bassAlter: number } | null {
+  const trimmed = label.trim();
+  const slashIdx = trimmed.lastIndexOf("/");
+  let main = trimmed;
+  let bassStr = "";
+  if (slashIdx > 0) {
+    const after = trimmed.slice(slashIdx + 1).trim();
+    if (/^[A-G][#♯b♭]?$/.test(after)) { bassStr = after; main = trimmed.slice(0, slashIdx).trim(); }
+  }
+  const m = main.match(/^([A-G])([#♯b♭]?)(.*)/);
   if (!m) return null;
   const ac = m[2] ?? "";
   const alter = ac === "#" || ac === "♯" ? 1 : ac === "b" || ac === "♭" ? -1 : 0;
-  const suffix = (m[3] ?? "").trim();
-  const bass = m[4] ?? null;
-  const bac = m[5] ?? "";
-  const bassAlter = bac === "#" || bac === "♯" ? 1 : bac === "b" || bac === "♭" ? -1 : 0;
-  const kind = LABEL_TO_KIND[suffix] ?? LABEL_TO_KIND[suffix.toLowerCase()] ?? "major";
-  return { root: m[1], alter, kind, bass: bass || null, bassAlter };
+  let bass: string | null = null;
+  let bassAlter = 0;
+  if (bassStr) {
+    const bm = bassStr.match(/^([A-G])([#♯b♭]?)$/);
+    if (!bm) return null;
+    bass = bm[1];
+    const bac = bm[2] ?? "";
+    bassAlter = bac === "#" || bac === "♯" ? 1 : bac === "b" || bac === "♭" ? -1 : 0;
+  }
+  const parsed = parseSuffix(m[3] ?? "");
+  if (!parsed) return null;
+  return { root: m[1], alter, kind: parsed.kind, degrees: parsed.degrees, bass, bassAlter };
+}
+
+export function validateChordLabel(label: string): boolean {
+  return parseChordLabel(label) !== null;
 }
 
 export function updateHarmony(xml: string, index: number, chordLabel: string): string {
@@ -563,7 +644,26 @@ export function updateHarmony(xml: string, index: number, chordLabel: string): s
   }
 
   const kindEl = harmonyEl.getElementsByTagName("kind")[0];
-  if (kindEl) kindEl.textContent = parsed.kind;
+  if (kindEl) {
+    kindEl.textContent = parsed.kind;
+    const degSuffix = parsed.degrees.map(d =>
+      d.type === "subtract" ? `no${d.value}` :
+      d.alter < 0 ? `b${d.value}` :
+      d.alter > 0 ? `#${d.value}` :
+      `add${d.value}`
+    ).join("");
+    kindEl.setAttribute("text", (KIND_TO_LABEL[parsed.kind] ?? parsed.kind) + degSuffix);
+  }
+
+  for (const deg of Array.from(harmonyEl.getElementsByTagName("degree"))) harmonyEl.removeChild(deg);
+  for (const d of parsed.degrees) {
+    const degEl = doc.createElement("degree");
+    const vEl = doc.createElement("degree-value"); vEl.textContent = String(d.value);
+    const aEl = doc.createElement("degree-alter"); aEl.textContent = String(d.alter);
+    const tEl = doc.createElement("degree-type");  tEl.textContent = d.type;
+    degEl.appendChild(vEl); degEl.appendChild(aEl); degEl.appendChild(tEl);
+    harmonyEl.appendChild(degEl);
+  }
 
   const existingBass = harmonyEl.getElementsByTagName("bass")[0];
   if (parsed.bass) {

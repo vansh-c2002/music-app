@@ -12,7 +12,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
+# ---------------------------------------------------------------------------
+# Legato constants
+# ---------------------------------------------------------------------------
+# Full model: 107M params, ~429 MB — fits on T4
+# Small model: 11M params, ~44 MB — less accurate, for baseline comparisons only
+LEGATO_MODEL_PATH = "guangyangmusic/legato"
+
 app = modal.App("ohsheet-omr")
+
+_legato_models: dict = {}
 
 # ---------------------------------------------------------------------------
 # Jazzmus constants
@@ -21,7 +30,7 @@ JAZZMUS_HF_REPO = "JuanCarlosMartinezSevilla/jazzmus-model"
 JAZZMUS_IMG_HEIGHT = 128   # pixels — fixed height used during SMT training
 JAZZMUS_MAX_WIDTH = 1000   # pixels — cap to avoid OOM on very wide staves
 
-# Module-level cache so models are loaded only once per warm container.
+# Module-level caches so models are loaded only once per warm container.
 _jazzmus_models: dict = {}
 
 try:
@@ -35,10 +44,15 @@ try:
 except ImportError:
     pass
 
+try:
+    from firebase_admin import firestore as fb_firestore
+except ImportError:
+    pass
+
 image = (
     modal.Image.from_registry(
         "nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04",
-        add_python="3.11",
+        add_python="3.12",
     )
     .apt_install(
         "git",
@@ -51,7 +65,7 @@ image = (
     )
     .pip_install("fastapi", "python-multipart", "poetry", "pdf2image", "firebase-admin")
     .run_commands(
-        # HOMR (classical)
+        # HOMR (classical fallback)
         "git clone https://github.com/liebharc/homr /homr",
         "cd /homr && poetry config virtualenvs.create false"
         " && poetry install --only main,gpu",
@@ -62,6 +76,22 @@ image = (
         "pip install music21 safetensors",
         # Pre-download jazzmus weights into the HuggingFace cache
         "python -c \"from huggingface_hub import snapshot_download; snapshot_download('JuanCarlosMartinezSevilla/jazzmus-model')\"",
+        # Legato (classical primary) — clone repo, install inference-only deps
+        "git clone https://github.com/guang-yng/legato.git /legato",
+        # Filter out SSH-gated deps (musicdiff) and training-only deps (deepspeed, wandb, zss, fire)
+        # Also exclude torch/numpy/pillow — reuse versions already installed by jazzmus/HOMR
+        "grep -v -E 'musicdiff|deepspeed|wandb|zss|^fire|^torch|^numpy|^pillow' "
+        "/legato/requirements.txt > /tmp/legato_req.txt "
+        "&& pip install -r /tmp/legato_req.txt",
+        # Pre-download Legato weights into the HuggingFace cache
+        # Requires HUGGING_FACE_HUB_TOKEN env var from the huggingface-token secret
+        "PYTHONPATH=/legato python -c \""
+        "import sys; sys.path.insert(0, '/legato'); "
+        "from legato.models import LegatoModel; "
+        "from transformers import AutoProcessor; "
+        f"LegatoModel.from_pretrained('{LEGATO_MODEL_PATH}'); "
+        f"AutoProcessor.from_pretrained('{LEGATO_MODEL_PATH}')\"",
+        secrets=[modal.Secret.from_name("hf-ohsheet")],
     )
 )
 
@@ -140,6 +170,142 @@ def _load_jazzmus_models() -> dict:
 
     _jazzmus_models.update({"yolo": yolo, "model": model, "device": device})
     return _jazzmus_models
+
+
+def _load_legato_models() -> dict:
+    """Load Legato model + processor into the module cache."""
+    if _legato_models:
+        return _legato_models
+
+    import sys
+    if "/legato" not in sys.path:
+        sys.path.insert(0, "/legato")
+
+    import torch
+    from legato.models import LegatoModel
+    from transformers import AutoProcessor, GenerationConfig
+
+    import os
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dtype = torch.float16 if device == "cuda" else torch.float32
+    if device == "cuda":
+        free, total = torch.cuda.mem_get_info()
+        print(f"[Legato] GPU before load: {free/1e9:.2f}/{total/1e9:.2f} GB free")
+    print(f"[Legato] Loading model dtype={dtype} device={device}")
+    model = LegatoModel.from_pretrained(LEGATO_MODEL_PATH, torch_dtype=dtype)
+    model = model.to(device)
+    model.eval()
+    if device == "cuda":
+        free, total = torch.cuda.mem_get_info()
+        print(f"[Legato] GPU after load: {free/1e9:.2f}/{total/1e9:.2f} GB free")
+
+    processor = AutoProcessor.from_pretrained(LEGATO_MODEL_PATH)
+    generation_config = GenerationConfig(max_length=2048, num_beams=10, repetition_penalty=1.1)
+
+    _legato_models.update({
+        "model": model,
+        "processor": processor,
+        "generation_config": generation_config,
+        "device": device,
+    })
+    return _legato_models
+
+
+def _run_legato(image_path: Path) -> str:
+    """Transcribe a single full-page image with Legato, return MusicXML string."""
+    import sys
+    if "/legato" not in sys.path:
+        sys.path.insert(0, "/legato")
+
+    import importlib.util
+    import torch
+    from PIL import Image as PILImage
+
+    models = _load_legato_models()
+    model = models["model"]
+    processor = models["processor"]
+    generation_config = models["generation_config"]
+    device = models["device"]
+
+    img = PILImage.open(image_path).convert("RGB")
+    print(f"[Legato] Input image size: {img.size}")
+    inputs = processor(images=[img], truncation=True, return_tensors="pt")
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+    if device == "cuda":
+        free, total = torch.cuda.mem_get_info()
+        print(f"[Legato] GPU before generate: {free/1e9:.2f}/{total/1e9:.2f} GB free")
+
+    with torch.no_grad():
+        outputs = model.generate(**inputs, generation_config=generation_config, use_model_defaults=False)
+
+    if device == "cuda":
+        free, total = torch.cuda.mem_get_info()
+        print(f"[Legato] GPU after generate: {free/1e9:.2f}/{total/1e9:.2f} GB free")
+    abc_outputs = processor.batch_decode(outputs.tolist(), skip_special_tokens=True)
+    abc_str = abc_outputs[0] if abc_outputs else ""
+    print(f"[Legato] ABC output length: {len(abc_str)} chars")
+    print(f"[Legato] ABC (first 300 chars): {abc_str[:300]}")
+
+    if not abc_str.strip():
+        raise HTTPException(status_code=500, detail="Legato produced empty output")
+
+    return abc_str
+
+
+def _abc_to_musicxml(abc_pages: list[str]) -> str:
+    """Convert one or more ABC pages to a single MusicXML string.
+
+    Each page is cleaned up and converted independently (cleanup_abc assumes a
+    single-tune ABC header), then multiple pages are merged via music21.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("legato_convert", "/legato/utils/convert.py")
+    convert_mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    spec.loader.exec_module(convert_mod)  # type: ignore[union-attr]
+
+    xml_pages: list[str] = []
+    for abc_str in abc_pages:
+        clean_abc = convert_mod.cleanup_abc(abc_str)
+        if not clean_abc:
+            raise HTTPException(status_code=500, detail="Legato ABC cleanup produced empty output")
+        result = subprocess.run(
+            ["python", "/legato/utils/abc2xml.py", "-"],
+            input=clean_abc.encode("utf-8"),
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail=f"abc2xml conversion failed: {result.stderr.decode('utf-8', errors='replace')[:500]}",
+            )
+        xml_str = result.stdout.decode("utf-8")
+        if not xml_str.strip():
+            raise HTTPException(status_code=500, detail="abc2xml produced empty MusicXML")
+        xml_pages.append(xml_str)
+
+    return _merge_musicxml(xml_pages)
+
+
+def _run_homr(image_path: Path, tmpdir: str) -> str:
+    """Transcribe a single image with HOMR, return MusicXML string."""
+    result = subprocess.run(
+        ["homr", str(image_path)],
+        cwd=tmpdir,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail=f"homr failed: {result.stderr}",
+        )
+    xml_files = list(Path(tmpdir).glob(f"{image_path.stem}*.musicxml"))
+    if not xml_files:
+        raise HTTPException(status_code=500, detail="homr produced no output")
+    return xml_files[0].read_text(encoding="utf-8")
 
 
 def _run_jazzmus(image_path: Path) -> str:
@@ -332,6 +498,7 @@ def _merge_musicxml(xml_list: list[str]) -> str:
 async def transcribe_multi(
     files: list[UploadFile] = File(...),
     score_type: Literal["classical", "jazz"] = Form(...),
+    model: str = Form("legato"),
     uid: str = Depends(verify_token),
 ):
     import io
@@ -349,43 +516,29 @@ async def transcribe_multi(
         else:
             all_images.append(contents)
 
-    if score_type == "jazz":
-        all_kern_sections: list[str] = []
-        with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        if model == "homr":
+            all_xml: list[str] = []
             for i, image_bytes in enumerate(all_images):
                 image_path = Path(tmpdir) / f"input_{i}.png"
                 image_path.write_bytes(image_bytes)
-                kern = _run_jazzmus(image_path)
-                all_kern_sections.append(kern)
-        full_kern = "!!linebreak\n".join(all_kern_sections)
-        xml_content = _kern_to_musicxml(full_kern)
-    else:
-        all_xml: list[str] = []
-        with tempfile.TemporaryDirectory() as tmpdir:
+                all_xml.append(_run_homr(image_path, tmpdir))
+            xml_content = _merge_musicxml(all_xml)
+        elif score_type == "jazz":
+            kern_sections: list[str] = []
             for i, image_bytes in enumerate(all_images):
                 image_path = Path(tmpdir) / f"input_{i}.png"
                 image_path.write_bytes(image_bytes)
-
-                result = subprocess.run(
-                    ["homr", str(image_path)],
-                    cwd=tmpdir,
-                    capture_output=True,
-                    text=True,
-                )
-                if result.returncode != 0:
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"homr failed on page {i+1}: {result.stderr}",
-                    )
-
-                xml_files = list(Path(tmpdir).glob(f"input_{i}*.musicxml"))
-                if not xml_files:
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"homr produced no output for page {i+1}",
-                    )
-                all_xml.append(xml_files[0].read_text(encoding="utf-8"))
-        xml_content = _merge_musicxml(all_xml)
+                kern_sections.append(_run_jazzmus(image_path))
+            full_kern = "!!linebreak\n".join(kern_sections)
+            xml_content = _kern_to_musicxml(full_kern)
+        else:
+            abc_pages: list[str] = []
+            for i, image_bytes in enumerate(all_images):
+                image_path = Path(tmpdir) / f"input_{i}.png"
+                image_path.write_bytes(image_bytes)
+                abc_pages.append(_run_legato(image_path))
+            xml_content = _abc_to_musicxml(abc_pages)
 
     return Response(
         content=xml_content,
@@ -394,11 +547,46 @@ async def transcribe_multi(
     )
 
 
+@web_app.post("/ab-feedback")
+async def ab_feedback_endpoint(
+    preferred_model: str = Form(...),
+    session_id: str = Form(...),
+    file_name: str = Form(...),
+    uid: str = Depends(verify_token),
+):
+    try:
+        fa = _get_firebase_app()
+        db = fb_firestore.client(app=fa)
+
+        db.collection("ab_feedback").add({
+            "uid": uid,
+            "preferred_model": preferred_model,
+            "session_id": session_id,
+            "file_name": file_name,
+            "created_at": fb_firestore.SERVER_TIMESTAMP,
+        })
+
+        stats_ref = db.collection("stats").document("ab_votes")
+        stats_ref.set(
+            {preferred_model: fb_firestore.Increment(1)},
+            merge=True,
+        )
+
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to save feedback: {exc}")
+
+
 @app.function(
-    gpu="T4",
+    gpu="A10G",
     image=image,
     timeout=600,
-    secrets=[modal.Secret.from_name("firebase-service-account")],
+    secrets=[
+        modal.Secret.from_name("firebase-service-account"),
+        modal.Secret.from_name("hf-ohsheet"),
+    ],
 )
 @modal.asgi_app()
 def fastapi_app():

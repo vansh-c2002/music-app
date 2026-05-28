@@ -6,6 +6,7 @@ import { motion } from "motion/react";
 import { useAuth } from "../lib/auth-context";
 import { CameraCapture } from "../components/camera-capture";
 import { getCapturedFile, setCapturedFile } from "../lib/camera-store";
+import { setPendingUpload } from "../lib/pending-upload-store";
 
 const AD_DURATION = 30;
 
@@ -234,15 +235,25 @@ export function UploadPage() {
     }, "image/png");
   };
 
-  const runUpload = async (files: File[], scoreType: "classical" | "jazz") => {
+  const runUpload = async (files: File[], scoreType: "classical" | "jazz", model: string = "legato") => {
     if (!currentUser) {
       setError("Please sign in to transcribe sheet music.");
       return;
     }
+
+    const sessionId = scoreType === "classical" ? crypto.randomUUID() : "";
+
+    if (scoreType === "classical") {
+      setPendingUpload({ files, scoreType, sessionId });
+    }
+
     setProcessing(true);
     const formData = new FormData();
     files.forEach((f) => formData.append("files", f));
     formData.append("score_type", scoreType);
+    if (scoreType === "classical") {
+      formData.append("model", model);
+    }
 
     try {
       const apiUrl = import.meta.env.VITE_API_URL;
@@ -263,7 +274,7 @@ export function UploadPage() {
       setStage("converting");
       await new Promise((r) => setTimeout(r, 800));
       if (previewUrl) URL.revokeObjectURL(previewUrl);
-      navigate("/editor", { state: { musicXml, fileName: files[0].name } });
+      navigate("/editor", { state: { musicXml, fileName: files[0].name, scoreType, sessionId } });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setProcessing(false);
@@ -494,7 +505,7 @@ export function UploadPage() {
                         setSelectedType("classical");
                         pendingScoreType.current = "classical";
                         setShowTypePicker(false);
-                        runUpload(pendingFile.current, "classical");
+                        runUpload(pendingFile.current, "classical", "legato");
                       }}
                       className={`relative p-8 rounded-2xl border-2 transition-all text-left overflow-hidden
                         ${selectedType === "classical"
