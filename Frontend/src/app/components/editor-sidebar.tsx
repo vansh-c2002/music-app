@@ -1,4 +1,4 @@
-import { MousePointer2, Trash2 } from "lucide-react";
+import { MousePointer2 } from "lucide-react";
 
 export type EditorTool = "select" | "delete";
 
@@ -12,7 +12,6 @@ export function EditorSidebar({ activeTool, onToolChange }: EditorSidebarProps) 
     <div className="w-14 bg-white border-r border-[#1C1917]/10 flex flex-col items-center py-4 gap-2 shrink-0">
       {[
         { tool: "select" as EditorTool, icon: MousePointer2, label: "Select" },
-        { tool: "delete" as EditorTool, icon: Trash2, label: "Delete note (Del key)" },
       ].map(({ tool, icon: Icon, label }) => (
         <button
           key={tool}
