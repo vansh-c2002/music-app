@@ -100,7 +100,8 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
           transition={{ duration: 0.25 }}
-          className="bg-white border-2 border-[#1C1917] rounded-2xl shadow-[6px_6px_0_#1C1917] w-full max-w-2xl overflow-hidden md:max-w-2xl max-w-[100vw] md:m-4 m-0 md:rounded-2xl rounded-none"
+          className="bg-white border-2 border-[#1C1917] rounded-2xl shadow-[6px_6px_0_#1C1917] w-full max-w-2xl md:max-w-2xl max-w-[100vw] md:m-4 m-0 md:rounded-2xl rounded-none flex flex-col overflow-hidden"
+          style={{ maxHeight: '100vh' }}
         >
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b-2 border-[#1C1917] bg-[#F5F0E8]">
@@ -122,7 +123,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
           </div>
 
           {/* Body */}
-          <div className="relative bg-[#1C1917] md:aspect-[4/3] flex items-center justify-center" style={{ minHeight: '60vh' }}>
+          <div className="relative bg-[#1C1917] flex items-center justify-center" style={{ height: '50vh' }}>
             <video
               ref={videoRef}
               autoPlay
