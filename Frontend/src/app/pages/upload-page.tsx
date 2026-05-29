@@ -633,8 +633,16 @@ export function UploadPage() {
                   {error.includes("sign in") ? (
                     <button
                       onClick={async () => {
-                        handleReset();
+                        const filesToProcess = pendingFile.current;
+                        const scoreType = pendingScoreType.current;
+                        const selectedFiles = orderedFiles.length > 0 ? orderedFiles : filesToProcess;
+                        setError(null);
                         await signInWithGoogle();
+                        if (selectedFiles.length > 0) {
+                          setShowTypePicker(false);
+                          setShowOrderReview(false);
+                          runUpload(selectedFiles, scoreType, scoreType === "classical" ? "legato" : undefined);
+                        }
                       }}
                       className="px-8 py-4 bg-[#1C1917] text-white border-2 border-[#1C1917] rounded-full hover:translate-y-[-2px] transition-all shadow-[4px_4px_0_#1C1917] inline-flex items-center gap-2"
                     >
