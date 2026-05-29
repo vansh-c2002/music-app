@@ -122,13 +122,13 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
           </div>
 
           {/* Body */}
-          <div className="relative bg-[#1C1917] aspect-video flex items-center justify-center">
+          <div className="relative bg-[#1C1917] aspect-[4/3] flex items-center justify-center">
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
-              className={`w-full h-full object-cover ${cameraState === "live" ? "block" : "hidden"}`}
+              className={`w-full h-full object-contain ${cameraState === "live" ? "block" : "hidden"}`}
             />
             {cameraState === "preview" && previewUrl && (
               <img
