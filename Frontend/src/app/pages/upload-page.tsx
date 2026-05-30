@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Upload, FileMusic, AlertCircle, LogIn, Camera, GripVertical, ZoomIn, X, Crop } from "lucide-react";
+import { Upload, FileMusic, AlertCircle, LogIn, Camera, GripVertical, ZoomIn, X, Crop, RotateCcw, RotateCw } from "lucide-react";
 import { useNavigate } from "react-router";
 import { Navbar } from "../components/navbar";
 import { motion } from "motion/react";
@@ -30,9 +30,11 @@ export function UploadPage() {
   const [cropMode, setCropMode] = useState(false);
   const [cropStart, setCropStart] = useState<{ x: number; y: number } | null>(null);
   const [cropEnd, setCropEnd] = useState<{ x: number; y: number } | null>(null);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
   const pendingFile = useRef<File[]>([]);
   const pendingScoreType = useRef<"classical" | "jazz">("classical");
   const fileDragIndex = useRef<number | null>(null);
+  const dragCounterRef = useRef(0);
   const cropImgRef = useRef<HTMLImageElement>(null);
   const cropDragging = useRef(false);
   const navigate = useNavigate();
@@ -55,6 +57,32 @@ export function UploadPage() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [lightboxIndex]);
+
+  // Window-level drag detection so dropping anywhere on the page works.
+  useEffect(() => {
+    const onEnter = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes("Files")) {
+        dragCounterRef.current++;
+        setIsDraggingFile(true);
+      }
+    };
+    const onLeave = () => {
+      dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+      if (dragCounterRef.current === 0) setIsDraggingFile(false);
+    };
+    const onOver = (e: DragEvent) => e.preventDefault();
+    const onDrop = () => { dragCounterRef.current = 0; setIsDraggingFile(false); };
+    window.addEventListener("dragenter", onEnter);
+    window.addEventListener("dragleave", onLeave);
+    window.addEventListener("dragover", onOver);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragenter", onEnter);
+      window.removeEventListener("dragleave", onLeave);
+      window.removeEventListener("dragover", onOver);
+      window.removeEventListener("drop", onDrop);
+    };
+  }, []);
 
   useEffect(() => {
     if (!showAd) return;
@@ -233,6 +261,39 @@ export function UploadPage() {
       setCropStart(null);
       setCropEnd(null);
     }, "image/png");
+  };
+
+  const applyRotate = (degrees: 90 | -90) => {
+    if (lightboxIndex === null) return;
+    const src = orderPreviewUrls[lightboxIndex];
+    if (!src) return;
+    const img = new Image();
+    img.onload = () => {
+      const swap = Math.abs(degrees) === 90;
+      const canvas = document.createElement("canvas");
+      canvas.width = swap ? img.naturalHeight : img.naturalWidth;
+      canvas.height = swap ? img.naturalWidth : img.naturalHeight;
+      const ctx = canvas.getContext("2d")!;
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate((degrees * Math.PI) / 180);
+      ctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
+      const idx = lightboxIndex;
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const newFile = new File([blob], orderedFiles[idx].name, { type: "image/png" });
+        const newUrl = URL.createObjectURL(newFile);
+        const newFiles = [...orderedFiles];
+        const newUrls = [...orderPreviewUrls];
+        if (newUrls[idx]) URL.revokeObjectURL(newUrls[idx]);
+        newFiles[idx] = newFile;
+        newUrls[idx] = newUrl;
+        setOrderedFiles(newFiles);
+        setOrderPreviewUrls(newUrls);
+        pendingFile.current = newFiles;
+        if (!showOrderReview) setPreviewUrl(newUrls[idx] || null);
+      }, "image/png");
+    };
+    img.src = src;
   };
 
   const runUpload = async (files: File[], scoreType: "classical" | "jazz", model: string = "legato") => {
@@ -876,6 +937,33 @@ export function UploadPage() {
         />
       )}
 
+      {/* Full-page drop overlay — fires when user drags a file anywhere over the browser window */}
+      {isDraggingFile && !processing && !showOrderReview && !showTypePicker && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: "rgba(127,255,212,0.18)", backdropFilter: "blur(2px)" }}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            dragCounterRef.current = 0;
+            setIsDraggingFile(false);
+            const files = e.dataTransfer.files;
+            if (files.length > 0) handleFilesUpload(Array.from(files));
+          }}
+        >
+          <div className="text-center pointer-events-none">
+            <div
+              className="mx-auto mb-6 w-32 h-32 rounded-2xl border-4 border-dashed border-[#1C1917] bg-[#7FFFD4]/60 flex items-center justify-center shadow-[8px_8px_0_#1C1917]"
+            >
+              <Upload className="w-12 h-12 text-[#1C1917]" strokeWidth={1.5} />
+            </div>
+            <p className="text-3xl font-bold text-[#1C1917]" style={{ fontFamily: "DM Serif Display, Georgia, serif" }}>
+              Drop your score here ♩
+            </p>
+          </div>
+        </div>
+      )}
+
       {lightboxIndex !== null && orderPreviewUrls[lightboxIndex] && (
         <div
           className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6"
@@ -939,13 +1027,29 @@ export function UploadPage() {
                 alt="Page preview"
                 className="max-w-full max-h-[75vh] object-contain rounded-xl shadow-2xl"
               />
-              <button
-                onClick={() => { setCropMode(true); setCropStart(null); setCropEnd(null); }}
-                className="flex items-center gap-2 px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-full transition-colors"
-              >
-                <Crop className="w-4 h-4" />
-                Crop Image
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => applyRotate(-90)}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-full transition-colors"
+                  title="Rotate left 90°"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => applyRotate(90)}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-full transition-colors"
+                  title="Rotate right 90°"
+                >
+                  <RotateCw className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => { setCropMode(true); setCropStart(null); setCropEnd(null); }}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-full transition-colors"
+                >
+                  <Crop className="w-4 h-4" />
+                  Crop
+                </button>
+              </div>
             </div>
           )}
         </div>

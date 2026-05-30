@@ -196,6 +196,17 @@ export class ScorePlayer {
       .sort((a, b) => a.time - b.time || a.index - b.index);
   }
 
+  /** Set the playback position (seconds). Safe to call while paused or playing. */
+  seek(time: number) {
+    const t = Math.max(0, Math.min(time, this.totalDuration));
+    if (this.playing) {
+      this.pause();
+      this.pauseOffset = t;
+    } else {
+      this.pauseOffset = t;
+    }
+  }
+
   /** Current playback position in seconds. */
   getCurrentTime(): number {
     if (!this.ctx) return this.pauseOffset;

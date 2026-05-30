@@ -58,6 +58,7 @@ export function EditorPage() {
   const sortedTimelineRef = useRef<{ time: number; cursorIndices: number[] }[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [bpm, setBpm] = useState(120);
+  const [bpmDraft, setBpmDraft] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [chordPopup, setChordPopup] = useState<{ harmony: ParsedHarmony; clientX: number; clientY: number; value: string } | null>(null);
@@ -233,6 +234,11 @@ export function EditorPage() {
       const nonRests = cursorNotes
         .map((n, i) => ({ n, i }))
         .filter(({ n }) => !n.isRest);
+
+      // Seek to the currently selected note so playback starts from the cursor position.
+      const melodyIdx = nonRests.findIndex(({ i }) => i === cursorStep);
+      player.seek(melodyIdx >= 0 ? (player.getNoteTimes()[melodyIdx] ?? 0) : 0);
+
       // Build a time-grouped timeline: notes at the same beat are in one group
       // so that chords and simultaneous treble/bass notes all highlight together.
       const flat = player
@@ -271,10 +277,12 @@ export function EditorPage() {
     }
   };
 
-  const handleBpmChange = (newBpm: number) => {
-    const clamped = Math.max(20, Math.min(300, newBpm));
+  const commitBpm = (raw: string) => {
+    const parsed = parseInt(raw, 10);
+    const clamped = isNaN(parsed) ? bpm : Math.max(20, Math.min(300, parsed));
     setBpm(clamped);
     playerRef.current?.setBpm(clamped);
+    setBpmDraft(null);
   };
 
   const handleChordClick = (harmony: ParsedHarmony, clientX: number, clientY: number) => {
@@ -431,16 +439,16 @@ export function EditorPage() {
       />
 
       {/* Top nav */}
-      <div className="relative z-10 bg-white border-b-2 border-[#1C1917] px-6 py-3 flex items-center justify-between shrink-0 shadow-[0_2px_0_#1C1917]">
-        <div className="flex items-center gap-4">
+      <div className="relative z-10 bg-white border-b-2 border-[#1C1917] px-3 sm:px-6 py-3 flex items-center justify-between shrink-0 shadow-[0_2px_0_#1C1917]">
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0">
           <Link
             to="/"
-            className="flex items-center gap-2 text-[#1C1917]/60 hover:text-[#1C1917] transition-colors font-medium"
+            className="flex items-center gap-2 text-[#1C1917]/60 hover:text-[#1C1917] transition-colors font-medium shrink-0"
           >
             <ArrowLeft className="w-5 h-5" />
-            <span>Back</span>
+            <span className="hidden sm:inline">Back</span>
           </Link>
-          <div className="w-px h-6 bg-[#1C1917]/20" />
+          <div className="w-px h-6 bg-[#1C1917]/20 shrink-0" />
           {editingTitle ? (
             <input
               autoFocus
@@ -456,14 +464,14 @@ export function EditorPage() {
                 if (e.key === "Escape") setEditingTitle(false);
                 e.stopPropagation();
               }}
-              className="text-lg font-bold text-[#1C1917] bg-[#F5F0E8] border-b-2 border-[#1C1917] outline-none px-1 rounded"
-              style={{ fontFamily: "DM Serif Display, Georgia, serif", minWidth: 200 }}
+              className="text-base sm:text-lg font-bold text-[#1C1917] bg-[#F5F0E8] border-b-2 border-[#1C1917] outline-none px-1 rounded min-w-0 w-28 sm:w-auto"
+              style={{ fontFamily: "DM Serif Display, Georgia, serif" }}
             />
           ) : (
             <button
               onClick={() => { setTitleDraft(displayTitle); setEditingTitle(true); }}
               title="Click to edit title"
-              className="text-lg font-bold text-[#1C1917] hover:bg-[#F5F0E8] px-1 rounded transition-colors"
+              className="text-base sm:text-lg font-bold text-[#1C1917] hover:bg-[#F5F0E8] px-1 rounded transition-colors truncate max-w-[120px] sm:max-w-xs"
               style={{ fontFamily: "DM Serif Display, Georgia, serif" }}
             >
               {displayTitle}
@@ -471,129 +479,126 @@ export function EditorPage() {
           )}
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Undo */}
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          {/* Undo / Redo — hidden on mobile */}
           <button
             onClick={handleUndo}
             disabled={currentModel === "legato" ? histIdx <= 0 : homrHistIdx <= 0}
-            className="p-2 rounded-lg border-2 border-[#1C1917] bg-white hover:bg-[#F5F0E8] disabled:opacity-30 transition-all shadow-[2px_2px_0_#1C1917] hover:shadow-[3px_3px_0_#1C1917] disabled:shadow-none"
+            className="hidden sm:flex p-2 rounded-lg border-2 border-[#1C1917] bg-white hover:bg-[#F5F0E8] disabled:opacity-30 transition-all shadow-[2px_2px_0_#1C1917] hover:shadow-[3px_3px_0_#1C1917] disabled:shadow-none"
             title="Undo (Ctrl+Z)"
           >
             <RotateCcw className="w-4 h-4 text-[#1C1917]" />
           </button>
-
-          {/* Redo */}
           <button
             onClick={handleRedo}
             disabled={currentModel === "legato" ? histIdx >= history.length - 1 : homrHistIdx >= homrHistory.length - 1}
-            className="p-2 rounded-lg border-2 border-[#1C1917] bg-white hover:bg-[#F5F0E8] disabled:opacity-30 transition-all shadow-[2px_2px_0_#1C1917] hover:shadow-[3px_3px_0_#1C1917] disabled:shadow-none"
+            className="hidden sm:flex p-2 rounded-lg border-2 border-[#1C1917] bg-white hover:bg-[#F5F0E8] disabled:opacity-30 transition-all shadow-[2px_2px_0_#1C1917] hover:shadow-[3px_3px_0_#1C1917] disabled:shadow-none"
             title="Redo (Ctrl+Y)"
           >
             <RotateCw className="w-4 h-4 text-[#1C1917]" />
           </button>
 
-          <div className="w-px h-6 bg-border mx-1" />
+          <div className="hidden sm:block w-px h-6 bg-border mx-1" />
 
           {/* Play / Pause */}
           <button
             onClick={handlePlayPause}
-            className="p-2 rounded-lg bg-muted hover:bg-muted/80 transition-colors"
+            className="p-2 rounded-lg border-2 border-[#1C1917] bg-white hover:bg-[#F5F0E8] transition-colors shadow-[2px_2px_0_#1C1917]"
             title={isPlaying ? "Pause" : "Play"}
           >
-            {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+            {isPlaying ? <Pause className="w-4 h-4 text-[#1C1917]" /> : <Play className="w-4 h-4 text-[#1C1917]" />}
           </button>
 
-          {/* BPM input */}
-          <div className="flex items-center gap-1 px-2 py-1 rounded-lg border-2 border-[#1C1917]/20 bg-[#F5F0E8] text-xs">
+          {/* BPM input — hidden on mobile */}
+          <div className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg border-2 border-[#1C1917]/20 bg-[#F5F0E8] text-xs">
             <input
-              type="number"
-              min={20}
-              max={300}
-              value={bpm}
-              onChange={(e) => handleBpmChange(Number(e.target.value))}
-              onKeyDown={(e) => e.stopPropagation()}
+              type="text"
+              inputMode="numeric"
+              maxLength={3}
+              value={bpmDraft ?? bpm}
+              onFocus={() => setBpmDraft(String(bpm))}
+              onChange={(e) => setBpmDraft(e.target.value.replace(/\D/g, "").slice(0, 3))}
+              onBlur={(e) => commitBpm(e.target.value)}
+              onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") e.currentTarget.blur(); }}
               className="bpm-field w-10 bg-transparent outline-none text-center text-[#1C1917] font-medium"
               title="Tempo (BPM)"
             />
             <span className="text-[#1C1917]/50 select-none">bpm</span>
           </div>
 
+          {/* Save — hidden on mobile */}
           {currentUser && (
             <button
               onClick={handleSaveToLibrary}
               disabled={saving || !!savedId}
-              className="px-4 py-2 border-2 border-[#1C1917] bg-[#B8D4B0] hover:bg-[#a8c4a0] disabled:opacity-50 rounded-lg transition-all shadow-[2px_2px_0_#1C1917] hover:shadow-[3px_3px_0_#1C1917] flex items-center gap-2 font-medium text-[#1C1917] text-sm"
+              className="hidden sm:flex px-4 py-2 border-2 border-[#1C1917] bg-[#B8D4B0] hover:bg-[#a8c4a0] disabled:opacity-50 rounded-lg transition-all shadow-[2px_2px_0_#1C1917] hover:shadow-[3px_3px_0_#1C1917] items-center gap-2 font-medium text-[#1C1917] text-sm"
               title={savedId ? "Already saved" : "Save to Library"}
             >
-              {saving ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <BookmarkPlus className="w-4 h-4" />
-              )}
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <BookmarkPlus className="w-4 h-4" />}
               <span>{savedId ? "Saved ✓" : "Save"}</span>
             </button>
           )}
 
-          {/* Export split button */}
+          {/* Export — icon-only on mobile, with PDF option on desktop */}
           <div className="flex rounded-lg overflow-hidden border-2 border-[#1C1917] shadow-[2px_2px_0_#1C1917] hover:shadow-[3px_3px_0_#1C1917] hover:translate-y-[-1px] transition-all">
             <button
               onClick={handleDownload}
-              className="px-4 py-2 bg-[#1C1917] text-white flex items-center gap-2 font-medium text-sm hover:opacity-90 transition-opacity"
+              className="px-3 sm:px-4 py-2 bg-[#1C1917] text-white flex items-center gap-2 font-medium text-sm hover:opacity-90 transition-opacity"
               title="Export as MusicXML"
             >
               <Download className="w-4 h-4" />
-              <span>Export</span>
+              <span className="hidden sm:inline">Export</span>
             </button>
             <div className="w-px bg-white/20" />
             <button
               onClick={handleExportPDF}
-              className="px-3 py-2 bg-[#1C1917] text-white/70 flex items-center gap-1 font-medium text-sm hover:opacity-90 hover:text-white transition-all"
+              className="px-2 sm:px-3 py-2 bg-[#1C1917] text-white/70 flex items-center gap-1 font-medium text-sm hover:opacity-90 hover:text-white transition-all"
               title="Export as PDF"
             >
               <FileDown className="w-4 h-4" />
-              <span className="text-xs">PDF</span>
+              <span className="hidden sm:inline text-xs">PDF</span>
             </button>
           </div>
         </div>
       </div>
 
       {/* Navigation / toolbar bar */}
-      <div className="relative z-10 bg-[#F5F0E8] border-b-2 border-[#1C1917] px-4 py-2 flex items-center gap-3 shrink-0">
+      <div className="relative z-10 bg-[#F5F0E8] border-b-2 border-[#1C1917] px-3 sm:px-4 py-2 flex items-center gap-2 sm:gap-3 shrink-0">
 
         {/* Prev / Next */}
         <button
           onClick={movePrev}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-lg border-2 border-[#1C1917] bg-white hover:bg-[#F5F0E8] text-sm font-medium transition-all shadow-[2px_2px_0_#1C1917]"
+          className="flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg border-2 border-[#1C1917] bg-white hover:bg-[#F5F0E8] text-sm font-medium transition-all shadow-[2px_2px_0_#1C1917]"
           title="Previous note (← arrow key)"
         >
           <ChevronLeft className="w-4 h-4" />
-          Prev
+          <span className="hidden sm:inline">Prev</span>
         </button>
         <button
           onClick={moveNext}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-lg border-2 border-[#1C1917] bg-white hover:bg-[#F5F0E8] text-sm font-medium transition-all shadow-[2px_2px_0_#1C1917]"
+          className="flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg border-2 border-[#1C1917] bg-white hover:bg-[#F5F0E8] text-sm font-medium transition-all shadow-[2px_2px_0_#1C1917]"
           title="Next note (→ arrow key)"
         >
-          Next
+          <span className="hidden sm:inline">Next</span>
           <ChevronRight className="w-4 h-4" />
         </button>
 
         {/* Current note display */}
         {cursorNote && (
-          <div className="px-3 py-1 rounded-lg border-2 border-[#1C1917] bg-[#F2C4C4] text-sm font-medium text-[#1C1917] shadow-[2px_2px_0_#1C1917]">
+          <div className="px-2 sm:px-3 py-1 rounded-lg border-2 border-[#1C1917] bg-[#F2C4C4] text-sm font-medium text-[#1C1917] shadow-[2px_2px_0_#1C1917] truncate max-w-[140px] sm:max-w-none">
             {cursorNote.isRest
               ? "𝄽 Rest"
               : `♩ ${cursorNote.step}${cursorNote.alter === 1 ? "♯" : cursorNote.alter === -1 ? "♭" : ""}${cursorNote.octave}`}
             {" · "}M{cursorNote.measure + 1}
             {multiSelected && (
-              <span className="ml-2 text-[#1C1917]/60">+{extraSelected.length} selected</span>
+              <span className="ml-2 text-[#1C1917]/60">+{extraSelected.length}</span>
             )}
           </div>
         )}
 
-        {/* Right side — key + transpose */}
+        {/* Right side — transpose (hidden on mobile) + model picker */}
         <div className="ml-auto flex items-center gap-3">
-          <div className="flex items-center gap-1" title="Transpose whole piece">
+          <div className="hidden md:flex items-center gap-1" title="Transpose whole piece">
             <span className="text-xs text-[#1C1917]/60 mr-1 font-medium">Transpose:</span>
             {[
               { label: "↓8va", val: -12, color: "#F9C8D8" },
@@ -613,7 +618,7 @@ export function EditorPage() {
           </div>
 
           {isClassical && (
-            <>
+            <div className="hidden md:flex items-center gap-3">
               <div className="w-px h-4 bg-[#1C1917]/20" />
               {homrXml === null ? (
                 <div className="flex items-center gap-2">
@@ -654,14 +659,92 @@ export function EditorPage() {
                   </button>
                 </div>
               )}
-            </>
+            </div>
           )}
+        </div>
+      </div>
+
+      {/* Mobile quick-edit bar — pitch up/down + BPM, visible only on small screens */}
+      <div className="md:hidden relative z-10 bg-white border-b border-[#1C1917]/15 px-3 py-2 shrink-0 flex items-center gap-2 overflow-x-auto">
+        {cursorNote && !cursorNote.isRest ? (
+          <>
+            <button
+              onClick={() => changePitchMulti([cursorNote], 1)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg border-2 border-[#1C1917] bg-[#B8D4B0] text-xs font-medium shadow-[2px_2px_0_#1C1917] shrink-0"
+            >
+              ↑ Up
+            </button>
+            <button
+              onClick={() => changePitchMulti([cursorNote], -1)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg border-2 border-[#1C1917] bg-[#F9C8D8] text-xs font-medium shadow-[2px_2px_0_#1C1917] shrink-0"
+            >
+              ↓ Down
+            </button>
+            <div className="w-px h-4 bg-[#1C1917]/20 shrink-0" />
+            {[{ label: "𝅝", value: "whole" }, { label: "𝅗𝅥", value: "half" }, { label: "♩", value: "quarter" }, { label: "♪", value: "eighth" }].map((d) => (
+              <button
+                key={d.value}
+                onClick={() => pushXml(updateNoteDuration(currentXml, cursorNote.measure, cursorNote.xmlIndex, d.value))}
+                className="px-2 py-1.5 rounded-lg border-2 text-sm shrink-0 transition-all"
+                style={{
+                  backgroundColor: cursorNote.type === d.value ? "#1C1917" : "#F5F0E8",
+                  color: cursorNote.type === d.value ? "white" : "#1C1917",
+                  borderColor: cursorNote.type === d.value ? "#1C1917" : "rgba(28,25,23,0.2)",
+                }}
+              >
+                {d.label}
+              </button>
+            ))}
+            <div className="w-px h-4 bg-[#1C1917]/20 shrink-0" />
+            <button
+              onClick={() => pushXml(deleteNote(currentXml, cursorNote.measure, cursorNote.xmlIndex))}
+              className="px-3 py-1.5 rounded-lg border-2 border-[#1C1917] bg-white text-xs font-medium shrink-0 hover:bg-[#F2C4C4]"
+            >
+              Delete
+            </button>
+          </>
+        ) : cursorNote?.isRest ? (
+          <>
+            {[{ label: "𝅝", value: "whole" }, { label: "𝅗𝅥", value: "half" }, { label: "♩", value: "quarter" }, { label: "♪", value: "eighth" }].map((d) => (
+              <button
+                key={d.value}
+                onClick={() => pushXml(updateNoteDuration(currentXml, cursorNote.measure, cursorNote.xmlIndex, d.value))}
+                className="px-2 py-1.5 rounded-lg border-2 text-sm shrink-0 transition-all"
+                style={{
+                  backgroundColor: cursorNote.type === d.value ? "#1C1917" : "#F5F0E8",
+                  color: cursorNote.type === d.value ? "white" : "#1C1917",
+                  borderColor: cursorNote.type === d.value ? "#1C1917" : "rgba(28,25,23,0.2)",
+                }}
+              >
+                {d.label}
+              </button>
+            ))}
+          </>
+        ) : (
+          <span className="text-xs text-[#1C1917]/40">Tap a note to edit</span>
+        )}
+        <div className="ml-auto shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg border border-[#1C1917]/20 bg-[#F5F0E8] text-xs">
+          <input
+            type="text"
+            inputMode="numeric"
+            maxLength={3}
+            value={bpmDraft ?? bpm}
+            onFocus={() => setBpmDraft(String(bpm))}
+            onChange={(e) => setBpmDraft(e.target.value.replace(/\D/g, "").slice(0, 3))}
+            onBlur={(e) => commitBpm(e.target.value)}
+            onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") e.currentTarget.blur(); }}
+            className="bpm-field w-10 bg-transparent outline-none text-center text-[#1C1917] font-medium"
+            title="Tempo (BPM)"
+          />
+          <span className="text-[#1C1917]/50 select-none">bpm</span>
         </div>
       </div>
 
       {/* Main area */}
       <div className="flex-1 flex overflow-hidden relative z-10">
-        <EditorSidebar activeTool="select" onToolChange={() => {}} />
+        <div className="hidden md:flex">
+          <EditorSidebar activeTool="select" onToolChange={() => {}} />
+        </div>
 
         <SheetMusicCanvas
           ref={canvasRef}
@@ -677,20 +760,22 @@ export function EditorPage() {
           onChordClick={handleChordClick}
         />
 
-        <PropertiesPanel
-          note={cursorNote}
-          onPitchStep={(note, newStep, newOctave) =>
-            pushXml(updateNotePitch(currentXml, note.measure, note.xmlIndex, newStep, newOctave, 0))
-          }
-          onAlterChange={(note, alter) =>
-            pushXml(updateNotePitch(currentXml, note.measure, note.xmlIndex, note.step, note.octave, alter))
-          }
-          onDurationChange={(note, type) =>
-            pushXml(updateNoteDuration(currentXml, note.measure, note.xmlIndex, type))
-          }
-          onDelete={handleDelete}
-          onAddChordNote={handleAddChordNote}
-        />
+        <div className="hidden md:flex">
+          <PropertiesPanel
+            note={cursorNote}
+            onPitchStep={(note, newStep, newOctave) =>
+              pushXml(updateNotePitch(currentXml, note.measure, note.xmlIndex, newStep, newOctave, 0))
+            }
+            onAlterChange={(note, alter) =>
+              pushXml(updateNotePitch(currentXml, note.measure, note.xmlIndex, note.step, note.octave, alter))
+            }
+            onDurationChange={(note, type) =>
+              pushXml(updateNoteDuration(currentXml, note.measure, note.xmlIndex, type))
+            }
+            onDelete={handleDelete}
+            onAddChordNote={handleAddChordNote}
+          />
+        </div>
       </div>
 
       {/* Chord symbol edit popup */}
