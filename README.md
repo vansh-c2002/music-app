@@ -22,14 +22,31 @@ View result in editor → export .musicxml → open in MuseScore
 
 ## Features
 
-- Upload PNG, JPG, or PDF files
-- Multi-file upload — select multiple images at once
+**Upload**
+- Drag-and-drop anywhere on the page, or browse/camera
+- Multi-file upload with drag-to-reorder page preview
 - Multi-page PDF support — every page is processed automatically
-- In-browser sheet music editor with note properties panel
-- One-click export to `.musicxml` for MuseScore
-- Low-confidence notes flagged for user review
+- Per-image crop and rotate in the preview lightbox
+- Classical (HOMR) and Jazz (Jazzmus) model selection
+
+**Editor**
+- Interactive sheet music viewer powered by OpenSheetMusicDisplay
+- Click any note to select it; shift-click for multi-select
+- Pitch editing — click up/down, drag a note vertically, or use arrow keys
+- Accidental, duration, and chord-note controls in the properties panel
+- Inline chord symbol editing (click any chord label to rename)
+- Transpose entire score by semitone or octave
+- Playback with BPM control; **click a note to start playing from that point**
+- Undo / redo history
+- Mobile-responsive layout with a compact quick-edit toolbar
+
+**Export & Library**
+- One-click export to `.musicxml` (opens in MuseScore, Sibelius, etc.)
+- Export to PDF via browser print
 - Google OAuth sign-in (Firebase Auth)
 - Personal library — save, browse, and re-open past scores (Firestore)
+
+**Other**
 - Ad-supported free tier (30-second countdown before processing)
 - Live at [music-app-924.pages.dev](https://music-app-924.pages.dev)
 
@@ -157,4 +174,5 @@ modal deploy Backend/modal_app.py
 - [ ] Multi-page editor — stitch multiple pages of MusicXML into a single scrollable score
 - [ ] Handwritten score support — integrate the ISMIR 2025 jazz lead sheet model for handwritten input
 - [x] Auth + user accounts — Google OAuth + personal score library
-- [ ] Export button prominence — make export more visible in the editor (user feedback)
+- [x] Mobile-responsive editor layout
+- [x] Playback seek — start playing from any selected note
