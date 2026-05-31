@@ -169,6 +169,21 @@ export function UploadPage() {
     pendingFile.current = [...pendingFile.current, ...files];
   };
 
+  const handleRemoveFile = (index: number) => {
+    const newFiles = orderedFiles.filter((_, i) => i !== index);
+    const newPreviews = orderPreviewUrls.filter((_, i) => i !== index);
+    if (newFiles.length === 0) {
+      setShowOrderReview(false);
+      setOrderedFiles([]);
+      setOrderPreviewUrls([]);
+      pendingFile.current = [];
+      return;
+    }
+    setOrderedFiles(newFiles);
+    setOrderPreviewUrls(newPreviews);
+    pendingFile.current = newFiles;
+  };
+
   const confirmOrder = () => {
     setFileName(orderedFiles.map((f) => f.name).join(", "));
     pendingFile.current = orderedFiles;
@@ -481,9 +496,16 @@ export function UploadPage() {
                       >
                         Preview
                       </h2>
-                      <p className="text-center text-[#1C1917]/60 text-sm mb-5">
-                        {orderedFiles[0].name}
-                      </p>
+                      <div className="flex items-center justify-center gap-2 mb-5">
+                        <p className="text-[#1C1917]/60 text-sm truncate max-w-[220px]">{orderedFiles[0].name}</p>
+                        <button
+                          onClick={() => handleRemoveFile(0)}
+                          className="w-5 h-5 rounded-full bg-[#F2C4C4] border border-[#1C1917]/20 flex items-center justify-center hover:bg-red-200 transition-colors flex-shrink-0"
+                          title="Remove file"
+                        >
+                          <X className="w-3 h-3 text-[#1C1917]" />
+                        </button>
+                      </div>
                       <div className="flex justify-center mb-4">
                         {orderPreviewUrls[0] ? (
                           <button
@@ -576,6 +598,14 @@ export function UploadPage() {
                                 </div>
                               )}
                               <span className="text-sm text-[#1C1917] truncate flex-1">{file.name}</span>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleRemoveFile(i); }}
+                                draggable={false}
+                                className="w-6 h-6 rounded-full bg-[#F5F0E8] border border-[#1C1917]/20 flex items-center justify-center hover:bg-[#F2C4C4] transition-colors flex-shrink-0 cursor-pointer"
+                                title="Remove"
+                              >
+                                <X className="w-3 h-3 text-[#1C1917]/60" />
+                              </button>
                             </div>
                             <div className={`h-[3px] rounded-full mx-1 mb-1 bg-[#7FFFD4] transition-opacity duration-100 ${dragOverIndex === i + 1 ? "opacity-100" : "opacity-0"}`} />
                           </div>
@@ -740,7 +770,8 @@ export function UploadPage() {
                 </div>
 
               ) : processing ? (
-                <div className="flex flex-col md:flex-row gap-8 items-center justify-center relative z-10">
+                <div className="flex flex-col gap-6 relative z-10">
+                  <div className="flex flex-col md:flex-row gap-8 items-center justify-center">
                   {previewUrl && (
                     <div className="flex-shrink-0">
                       <img
@@ -829,6 +860,13 @@ export function UploadPage() {
                       This usually takes 3–5 minutes. Please keep this tab open.
                     </p>
                   </div>
+                  </div>
+                  {/* Ad placeholder */}
+                  <div className="w-full rounded-xl border-2 border-dashed border-[#1C1917]/20 bg-[#F5F0E8]/50 py-8 flex items-center justify-center">
+                    <span className="text-sm text-[#1C1917]/30 font-medium tracking-widest uppercase select-none">
+                      Ad Placeholder
+                    </span>
+                  </div>
                 </div>
 
               ) : (
@@ -874,72 +912,6 @@ export function UploadPage() {
             </div>
           </motion.div>
 
-          {/* Ad banner — compact strip, shown for 30s alongside processing */}
-          {showAd && (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className="mb-8 -mt-4"
-            >
-              <div className="relative bg-white border border-[#1C1917]/15 rounded-2xl overflow-hidden shadow-sm">
-                {/* Label row */}
-                <div className="flex items-center justify-between px-4 pt-2.5 pb-1">
-                  <span className="text-[10px] text-[#1C1917]/30 uppercase tracking-widest font-medium select-none">
-                    Advertisement
-                  </span>
-                  {/* Countdown ring + seconds */}
-                  <div className="flex items-center gap-1.5">
-                    <svg className="-rotate-90 w-5 h-5" viewBox="0 0 20 20">
-                      <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2" className="text-[#1C1917]/10" />
-                      <circle
-                        cx="10" cy="10" r="8"
-                        fill="none" stroke="currentColor" strokeWidth="2"
-                        strokeDasharray={2 * Math.PI * 8}
-                        strokeDashoffset={2 * Math.PI * 8 * (1 - adCountdown / AD_DURATION)}
-                        className="text-[#7FFFD4]"
-                        style={{ transition: "stroke-dashoffset 1s linear" }}
-                      />
-                    </svg>
-                    <span className="text-xs text-[#1C1917]/40 font-mono tabular-nums w-6 text-right">
-                      {adCountdown}s
-                    </span>
-                  </div>
-                </div>
-
-                {/* Ad content */}
-                <div className="flex items-center gap-4 px-4 pb-4">
-                  {/* Mock product icon */}
-                  <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#1C1917] to-[#5C3D1E] flex items-center justify-center flex-shrink-0 shadow-md">
-                    <span className="text-2xl" aria-hidden>🎹</span>
-                  </div>
-
-                  {/* Copy */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[10px] text-[#1C1917]/35 font-mono mb-0.5 uppercase tracking-wide">
-                      Sponsored · flowkey.com
-                    </p>
-                    <p className="font-bold text-[#1C1917] text-sm leading-tight">
-                      Learn Piano the Smarter Way
-                    </p>
-                    <p className="text-xs text-[#1C1917]/55 mt-0.5 leading-snug hidden sm:block">
-                      10,000+ songs · real-time feedback · 7-day free trial
-                    </p>
-                  </div>
-
-                  {/* Dummy CTA */}
-                  <button
-                    tabIndex={-1}
-                    disabled
-                    className="shrink-0 px-4 py-2 bg-[#1C1917] text-white text-xs font-semibold rounded-full opacity-60 cursor-default select-none"
-                    aria-hidden
-                  >
-                    Try Free →
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          )}
 
           {/* Load MusicXML shortcut */}
           {!processing && !error && !showOrderReview && !showTypePicker && (
