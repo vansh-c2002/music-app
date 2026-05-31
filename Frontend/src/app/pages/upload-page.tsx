@@ -530,24 +530,6 @@ export function UploadPage() {
                           </div>
                         )}
                       </div>
-                      <input
-                        ref={addMoreInputRef}
-                        type="file"
-                        multiple
-                        accept=".png,.jpg,.jpeg,.pdf"
-                        className="hidden"
-                        onChange={(e) => {
-                          const files = e.target.files;
-                          if (files && files.length > 0) handleAppendFiles(Array.from(files));
-                          e.target.value = "";
-                        }}
-                      />
-                      <button
-                        onClick={() => addMoreInputRef.current?.click()}
-                        className="w-full mb-4 py-2 rounded-xl border-2 border-dashed border-[#1C1917]/30 text-sm text-[#1C1917]/50 hover:border-[#1C1917]/60 hover:text-[#1C1917]/70 hover:bg-[#F5F0E8]/60 transition-all flex items-center justify-center gap-2"
-                      >
-                        <Plus className="w-4 h-4" /> Add more files
-                      </button>
                     </>
                   ) : (
                     /* Multiple files — drag-to-reorder list */
@@ -611,14 +593,27 @@ export function UploadPage() {
                           </div>
                         ))}
                       </div>
-                      <button
-                        onClick={() => addMoreInputRef.current?.click()}
-                        className="w-full mb-3 py-2 rounded-xl border-2 border-dashed border-[#1C1917]/30 text-sm text-[#1C1917]/50 hover:border-[#1C1917]/60 hover:text-[#1C1917]/70 hover:bg-[#F5F0E8]/60 transition-all flex items-center justify-center gap-2"
-                      >
-                        <Plus className="w-4 h-4" /> Add more files
-                      </button>
                     </>
                   )}
+                  {/* Always-visible input + add more button */}
+                  <input
+                    ref={addMoreInputRef}
+                    type="file"
+                    multiple
+                    accept=".png,.jpg,.jpeg,.pdf"
+                    className="hidden"
+                    onChange={(e) => {
+                      const files = e.target.files;
+                      if (files && files.length > 0) handleAppendFiles(Array.from(files));
+                      e.target.value = "";
+                    }}
+                  />
+                  <button
+                    onClick={() => addMoreInputRef.current?.click()}
+                    className="w-full mt-3 mb-3 py-2 rounded-xl border-2 border-dashed border-[#1C1917]/30 text-sm text-[#1C1917]/50 hover:border-[#1C1917]/60 hover:text-[#1C1917]/70 hover:bg-[#F5F0E8]/60 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" /> Add more files
+                  </button>
                   <button
                     onClick={confirmOrder}
                     className="w-full py-3 bg-[#7FFFD4] border-2 border-[#1C1917] rounded-full font-medium hover:translate-y-[-2px] transition-all shadow-[4px_4px_0_#1C1917] hover:shadow-[6px_6px_0_#1C1917]"
